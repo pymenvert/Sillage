@@ -7,14 +7,14 @@ comme des rapports d'effort plus que des dates.
 
 ## M0 — Fondations (≈ 1–2 semaines)
 
-- Monorepo, CMake + vcpkg + presets (MSVC, GCC), CI GitHub Actions **verte sur Windows et
-  Ubuntu dès le premier jour** (build + tests + lint).
+- Monorepo, CMake + vcpkg + presets (MSVC, GCC, Clang/AppleClang), CI GitHub Actions
+  **verte sur Windows, Ubuntu et macOS dès le premier jour** (build + tests + lint).
 - Squelette marchant : driver **simulateur** → clustering naïf → tracker minimal (plus
   proche voisin) → sortie OSC + page web affichant les points et tracks en WebGL.
 - Format d'enregistrement + driver replay (les tests en dépendent).
 
 **Acceptance** : cloner, `cmake --build`, ouvrir le navigateur, voir des agents simulés
-trackés, recevoir l'OSC dans Protokol/Chataigne. Sur les deux OS.
+trackés, recevoir l'OSC dans Protokol/Chataigne. Sur les trois OS.
 
 ## M1 — Un LiDAR, un tracker solide (≈ 3–4 semaines)
 
@@ -58,31 +58,41 @@ un tracking calibré en < 30 min, UI seule, doc non ouverte.
   TouchDesigner / Unity / Unreal (harnais de conformité).
 - TUIO, OSC générique, MQTT/webhooks, export CSV/JSONL.
 - Prédiction (compensation de latence) et lissage One-Euro par sortie.
+- **Driver Livox Mid-360 en mode « tranche 2D »** : le nuage 3D est découpé en bande de
+  hauteur configurable et alimente le pipeline existant tel quel — premier capteur 3D
+  supporté sans changer l'architecture, et la hauteur par personne enrichit la ré-ID.
 
 **Acceptance** : la scène d'exemple TouchDesigner d'Augmenta fonctionne avec Sillage sans
-modification ; démos Unity et Unreal enregistrées.
+modification ; démos Unity et Unreal enregistrées ; un Mid-360 au plafond tracke la salle
+de test.
 
 ## M5 — Durcissement et distribution (≈ 2–3 semaines)
 
 - Service systemd + Windows Service, watchdog, crash handler + rapport de diagnostic.
 - **Soak test 48 h** : 2 capteurs + simulateur de charge, zéro fuite (RSS plat), zéro
   déconnexion non récupérée — c'est un test de CI nightly désormais.
-- Installeurs : `.deb` (+ dépôt apt à terme), installeur Windows (Inno Setup), binaires
-  signés si certificat dispo. Versionnage semver + notes de release automatisées.
+- Installeurs : `.deb` (+ dépôt apt à terme), installeur Windows (Inno Setup), `.pkg`
+  macOS universel (arm64 + x86_64, launchd ; signature/notarisation Apple dès qu'un compte
+  développeur existe — les builds non signés restent utilisables via clic droit > Ouvrir).
+  Versionnage semver + notes de release automatisées.
 - Doc utilisateur (installation, calibration, intégrations) — site mkdocs.
 
-**Acceptance** : installation sur machine vierge (les deux OS) en < 10 min ; survit à
+**Acceptance** : installation sur machine vierge (les trois OS) en < 10 min ; survit à
 48 h de soak ; **v1.0 taggée**.
 
 ## M6 — Au-delà (backlog priorisé, post-v1)
 
-1. **LiDARs 3D** (Ouster, Livox, Hesai) : hauteur par personne (ré-ID bien meilleure),
-   grandes salles, tranches multiples.
+1. **Perception 3D complète** (Livox, Hesai JT16, Unitree L2, Ouster) : au-delà de la
+   tranche 2D de M4 — clustering 3D, hauteur/posture, montage plafond, tranches multiples.
 2. **Analytique** : heatmaps historisées, parcours, funnels de zones, rétention SQLite/Parquet.
 3. **Architecture distribuée** `sillage-node` → engine central (grands sites), sync PTP.
-4. Ré-ID par cadence de pas (expérimental, voir [03 §7](03-tracking-et-fusion.md)).
-5. Suivi d'objets non-humains (chariots, robots) par profils de cluster.
-6. API de plugins de sortie chargés dynamiquement.
+4. **Ancrage d'identité par balise UWB** (performers) : fusion balise portée + track LiDAR —
+   l'ID d'un danseur désigné ne peut jamais se perdre, le public reste tracké sans tag.
+5. **Radar mmWave en capteur de présence complémentaire** (personnes immobiles, fumée
+   scénique — là où le LiDAR est aveuglé ou le fond adaptatif absorbe).
+6. Ré-ID par cadence de pas (expérimental, voir [03 §7](03-tracking-et-fusion.md)).
+7. Suivi d'objets non-humains (chariots, robots) par profils de cluster.
+8. API de plugins de sortie chargés dynamiquement.
 
 ## Risques identifiés et parades
 

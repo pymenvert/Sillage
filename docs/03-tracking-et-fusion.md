@@ -79,6 +79,14 @@ coût(i,j) = d²_Mahalanobis(prédiction_i, mesure_j)      // position + incerti
 
 - **Gating** : coût infini au-delà du seuil χ² (95 %) — jamais d'association aberrante.
 - Résolution optimale par **Hungarian / Jonker-Volgenant** (n ≤ 100 ⇒ négligeable en CPU).
+- **Association en deux passes** (idée transposée de ByteTrack, qui a démontré en MOT vidéo
+  que les détections *faibles* sont précisément celles dont le tracker a besoin sous
+  occultation) : chaque cluster porte une confiance (nombre de points, nombre de capteurs
+  contributeurs, stabilité). Passe 1 : clusters forts ↔ tous les tracks. Passe 2 : clusters
+  **faibles** (personne en bord de portée, à moitié masquée, peu de points) ↔ uniquement les
+  tracks confirmés restés sans mesure. On récupère ainsi la mesure partielle qui maintient
+  l'ID au lieu de basculer en coasting — sans jamais laisser un cluster faible créer un
+  nouveau track fantôme.
 - **Test anti-échange** : pour toute paire de tracks proches (< 1 m) assignés à deux mesures,
   comparer le coût de l'assignation directe vs croisée **en incluant la continuité de
   vitesse** ; ne croiser que si l'écart dépasse une marge franche. Deux personnes qui se
@@ -105,6 +113,12 @@ naissance ────────────────▶ Confirmed ──�
 - **Probation** M/N (ex. 3 hits sur 5 ticks) : le bruit ne crée pas de fantômes publiés.
 - **Coasting** : T_coast ≈ 1–2 s selon config. Un track qui coaste est réassociable en
   priorité dès qu'une mesure réapparaît dans son gate (élargi avec le temps).
+- **Ré-acquisition « centrée observation »** (idée transposée d'OC-SORT) : pendant le
+  coasting, le Kalman propage l'hypothèse vitesse constante et sa vitesse dérive. À la
+  ré-acquisition, on ré-estime l'état en rejouant une trajectoire virtuelle entre la
+  dernière observation réelle et la nouvelle (interpolation + re-update du filtre), au lieu
+  de corriger brutalement — sinon le track ressort de l'occultation avec une vitesse fausse
+  et devient vulnérable à un échange dans les ticks suivants.
 - Événements publiés : `personEntered` (à la confirmation), `personUpdated` (chaque tick),
   `personWillLeave` (à la mort) — sémantique alignée sur le protocole Augmenta.
 

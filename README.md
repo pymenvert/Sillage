@@ -22,7 +22,11 @@
   régler, ou valider une mise à jour.
 - **Simulateur intégré** : scénarios synthétiques (croisements, groupes, files) avec vérité
   terrain, utilisés comme tests de non-régression du tracker en CI.
-- **Multiplateforme** : Windows 10/11 et Ubuntu 22.04+, service système, fonctionnement headless.
+- **Outillage de maintenance et debug** : enregistrements au format ouvert MCAP (lisibles
+  dans Foxglove Studio), profilage Tracy intégré, `sillage doctor`, injection de pannes,
+  rapport de diagnostic en un clic.
+- **Multiplateforme** : Windows 10/11, Ubuntu 22.04+ et macOS 13+ (Apple Silicon et Intel),
+  service système, fonctionnement headless.
 
 ## Documentation de conception
 
@@ -36,6 +40,7 @@
 | [06 — Protocoles et intégrations](docs/06-protocoles-et-integrations.md) | OSC Augmenta, WebSocket, TUIO, API REST |
 | [07 — Roadmap](docs/07-roadmap.md) | Jalons M0→M6 avec critères d'acceptation |
 | [08 — Ingénierie](docs/08-ingenierie.md) | Stack, CI/CD, tests, conventions, packaging |
+| [09 — Outils de maintenance et debug](docs/09-outils-maintenance-debug.md) | Profilage, replay, diagnostic, injection de pannes |
 | [ADRs](docs/adr/) | Décisions d'architecture actées |
 
 ## Organisation du dépôt (cible)
@@ -51,6 +56,7 @@ sillage/
 ├── protocol/          # Schémas JSON partagés engine ↔ UI ↔ clients (source de vérité)
 ├── simulator/         # Scénarios de test et générateur de vérité terrain
 ├── datasets/          # Enregistrements réels de référence (Git LFS)
-├── packaging/         # Installeurs Windows, paquet .deb, unités systemd / service Windows
+├── tools/             # Outils de maintenance/debug (doctor, inspecteurs, harnais de charge)
+├── packaging/         # Installeurs Windows, .deb, .pkg macOS, services systemd/Windows/launchd
 └── docs/              # Ce dossier
 ```

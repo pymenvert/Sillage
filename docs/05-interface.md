@@ -8,8 +8,10 @@ tablette pendant qu'on règle les capteurs dans la salle.
 ## Stack
 
 - **React 18 + TypeScript + Vite**, état : Zustand.
-- **Rendu scène : WebGL** (regl ou Three.js en vue orthographique) — les nuages de points
+- **Rendu scène : WebGL2 en base, WebGPU en chemin progressif** — les nuages de points
   temps réel (10⁴–10⁵ pts) exigent le GPU ; le reste de l'UI est du DOM classique.
+  WebGPU est désormais livré par défaut dans Chrome, Edge, Safari et Firefox (2025+), mais
+  Linux reste en cours de déploiement → WebGL2 reste la base requise, même rendu visuel.
 - Tailwind CSS + Radix UI (primitives accessibles), animations Framer Motion.
 - Typo : Inter (UI) + JetBrains Mono (valeurs numériques, logs).
 - Flux temps réel : WebSocket, canal `points` en **binaire** (Float32, décimation adaptative

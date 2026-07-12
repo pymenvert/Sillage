@@ -35,6 +35,7 @@ avec plusieurs différenciateurs (voir plus bas).
 | Précision position (après calibration) | ± 5 cm dans les zones bien couvertes |
 | Persistance des IDs | 0 échange d'ID sur les scénarios de croisement standard multi-capteurs ; fenêtre de ré-identification configurable après perte |
 | Robustesse | fonctionnement 24/7, reconnexion capteur automatique, service système avec watchdog |
+| Plateformes | Windows 10/11, Ubuntu 22.04+, macOS 13+ (Apple Silicon prioritaire, Intel supporté) — mêmes fonctionnalités partout |
 | Vie privée | aucune image, aucune donnée biométrique — anonyme par conception (argument RGPD) |
 
 ## Ce que fait Augmenta (état de l'art à égaler)
@@ -71,6 +72,39 @@ D'après la [doc officielle](https://docs.augmenta.tech) et les
 6. **UI web embarquée** — configuration depuis une tablette sur site, aucun logiciel à
    installer côté client, même UI sur Windows et Ubuntu.
 
+## Paysage concurrentiel (au-delà d'Augmenta)
+
+Le tracking de personnes par LiDAR 3D existe côté industrie/smart-city :
+[Outsight](https://www.outsight.ai/) (flux de personnes dans les aéroports),
+[Seoul Robotics SENSR](https://seoulrobotics.tech/) (précision annoncée ~4 cm),
+[Blickfeld Percept](https://www.blickfeld.com/lidar-software/) (analytique de foule embarquée
+sur capteur). Tous visent l'industriel : tarification enterprise, intégrations BI/sécurité,
+aucun ne parle OSC ni ne s'intègre à l'écosystème créatif. **La niche
+immersif/scénographie/événementiel, avec du matériel ouvert et la compatibilité Augmenta,
+est libre** — et ces acteurs valident la pertinence technique du LiDAR 3D pour la foule.
+
+## Technologies capteurs évaluées
+
+- **LiDAR 2D** (choix v1) : le meilleur ratio précision/coût/simplicité pour une salle ; tout
+  le pipeline v1 est construit dessus.
+- **LiDAR 3D compact nouvelle génération** (intégration progressive dès M4) : la génération
+  2024–2026 change la donne — [Livox Mid-360](https://www.livoxtech.com/mid-360)
+  (360°×59°, 70 m, 200 k pts/s, ~750 €), [Hesai JT16](https://www.hesaitech.com/product/jt16/)
+  (360°×40°, ~650 €), [Unitree L2](https://www.unitree.com/L2/) (360°×96°, ~400 €). Prix d'un
+  LiDAR 2D milieu de gamme, mais : hauteur par personne (ré-identification bien plus fiable),
+  montage au plafond possible (moins d'occultations), immunité aux interférences multi-capteurs.
+  Stratégie : le pipeline v1 consomme leurs nuages par **tranches de hauteur** (aucun changement
+  d'architecture), la perception 3D complète vient en M6.
+- **Radar mmWave** (TI IWR6843 et similaires, ~50–150 €) : détecte les personnes **immobiles**
+  (micro-mouvements respiratoires) là où le fond LiDAR peut les absorber, insensible
+  poussière/fumée (effets scéniques !). Nuage trop épars pour du tracking d'ID précis →
+  évalué comme **capteur complémentaire de présence** (post-v1), pas comme capteur principal.
+- **Caméras profondeur/stéréo** (Orbbec Femto, ZED) : riches mais FOV étroit, interférences
+  entre unités, et réintroduisent l'image (RGPD) → hors périmètre.
+- **Balises UWB portées** : précis et ID garanti mais nécessite un tag par personne → noté en
+  M6 comme *ancrage d'identité* optionnel pour performers (fusion balise + track LiDAR : l'ID
+  d'un danseur ne se perd jamais).
+
 ## Hors périmètre v1 (assumé)
 
 - LiDARs 3D (Ouster, Livox, Hesai) → M6. L'architecture les prévoit (interface driver à
@@ -89,8 +123,12 @@ D'après la [doc officielle](https://docs.augmenta.tech) et les
 | Slamtec RPLIDAR S3 | 2D 360° série | 40 m | 20 Hz | ~600 € | dev + petites salles |
 | Hokuyo UST-10LX / 20LX | 2D 270° Ethernet | 10/20 m | 40 Hz | ~1 500–2 500 € | standard pro |
 | SICK TiM781 | 2D 270° Ethernet | 25 m | 15 Hz | ~2 000 € | standard pro |
-| Ouster OS0/OS1 (post-v1) | 3D Ethernet | 50–120 m | 10–20 Hz | ~6 000 €+ | grandes salles, hauteur |
+| Livox Mid-360 (dès M4) | 3D 360°×59° Ethernet | 70 m | 200 k pts/s | ~750 € | plafond, hauteur, grandes salles |
+| Hesai JT16 (M6) | 3D 360°×40° Ethernet | 30–100 m | 48 k pts/s | ~650 € | alternative compacte |
+| Unitree L2 (M6) | 3D 360°×96° Ethernet | 30 m | 64 k pts/s | ~400 € | 3D d'entrée de gamme |
+| Ouster OS0/OS1 (M6) | 3D Ethernet | 50–120 m | 10–20 Hz | ~6 000 €+ | très grandes salles |
 
 Achat minimum recommandé pour développer sérieusement : **2 × RPLIDAR** (pour travailler la
-fusion dès le début) puis **1 × Hokuyo UST** (pour valider le driver pro et la fréquence 40 Hz).
+fusion dès le début), **1 × Livox Mid-360** (pour préparer la tranche 3D dès M4 et enregistrer
+des datasets), puis **1 × Hokuyo UST** (pour valider le driver pro et la fréquence 40 Hz).
 Montage horizontal entre la cheville et la taille selon la salle (voir [04](04-calibration.md)).

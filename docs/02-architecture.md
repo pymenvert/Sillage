@@ -154,7 +154,10 @@ positions Kalman sont déjà lisses, mais certains contenus veulent plus doux).
 ### `record/` — enregistrement et replay
 
 - Enregistre les `ScanFrame` **bruts** (avant tout traitement) de tous les capteurs +
-  snapshot de config, dans un conteneur à chunks compressés zstd, index temporel.
+  snapshot de config, au format **MCAP** ([ADR-005](adr/005-enregistrement-mcap.md)) :
+  conteneur standard robotique, chunks compressés zstd, indexé, bibliothèque C++ officielle —
+  et lisible directement dans **Foxglove Studio**, ce qui nous offre gratuitement un
+  inspecteur de données professionnel (timeline, nuages de points, courbes).
 - Ordre de grandeur : un LiDAR 2D ≈ 1 000–4 000 points × 10–40 Hz ≈ quelques Mo/min
   compressé — enregistrement continu en anneau (« boîte noire », N dernières minutes)
   possible en permanence.
@@ -172,6 +175,9 @@ positions Kalman sont déjà lisses, mais certains contenus veulent plus doux).
   - `health` (fps par capteur, budget latence, CPU).
 - Sert l'UI web statique (embarquée dans le binaire ou dossier à côté).
 - Auth simple v1 : token local + bind configurable (127.0.0.1 par défaut, LAN sur opt-in).
+- Annonce **mDNS/Bonjour** (`_sillage._tcp`) : l'engine est découvrable sur le LAN — on
+  ouvre l'UI depuis une tablette sans connaître l'IP (natif sur macOS, Avahi sur Ubuntu,
+  mDNS Windows 10+).
 
 ### `config/` — configuration
 
@@ -187,9 +193,11 @@ positions Kalman sont déjà lisses, mais certains contenus veulent plus doux).
 - Endpoint `/metrics` Prometheus : fps par étage du pipeline, latences p50/p99, tracks
   actifs, mémoire.
 - Watchdog interne (un étage bloqué > seuil ⇒ log + restart du pipeline) + supervision
-  externe (systemd `Restart=on-failure` / Windows Service recovery).
-- Handler de crash : minidump + dernières secondes de la boîte noire ⇒ un incident sur
-  site devient un ticket reproductible.
+  externe (systemd `Restart=on-failure`, Windows Service recovery, launchd `KeepAlive`).
+- Handler de crash : minidump/backtrace + dernières secondes de la boîte noire ⇒ un
+  incident sur site devient un ticket reproductible.
+- Profilage **Tracy** compilé en opt-in : vue frame-par-frame de chaque étage du pipeline
+  (voir [09 — Outils](09-outils-maintenance-debug.md)).
 
 ## Modèle de threads
 
