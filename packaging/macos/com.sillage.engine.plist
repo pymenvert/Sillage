@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- launchd daemon for the Sillage engine (macOS 13+).
+     Install:
+       sudo cp com.sillage.engine.plist /Library/LaunchDaemons/
+       sudo launchctl load -w /Library/LaunchDaemons/com.sillage.engine.plist -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.sillage.engine</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/sillage-engine</string>
+        <string>--config</string>
+        <string>/Library/Application Support/Sillage/project.json</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Library/Application Support/Sillage</string>
+    <key>KeepAlive</key>
+    <true/>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Library/Logs/sillage.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Library/Logs/sillage.log</string>
+</dict>
+</plist>

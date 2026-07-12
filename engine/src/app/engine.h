@@ -2,7 +2,10 @@
 
 #include "core/types.h"
 #include "drivers/hokuyo/hokuyo_driver.h"
+#include "config/project.h"
 #include "io/augmenta_osc.h"
+#include "io/ecosystem_outputs.h"
+#include "logic/zones.h"
 #include "net/ws_server.h"
 #include "pipeline/pipeline.h"
 #include "record/recorder.h"
@@ -35,10 +38,24 @@ struct EngineConfig {
     uint32_t randomAgents = 1; // demo walkers besides the two crossing agents
     uint32_t seed = 42;
     std::vector<HokuyoSensorConfig> hokuyos; // real sensors (appended after sim)
+    std::vector<ZoneConfig> zones;
+    bool oscEnabled = true;
+    bool tuioEnabled = false;
+    std::string tuioHost = "127.0.0.1";
+    uint16_t tuioPort = 3333;
+    bool admEnabled = false;
+    std::string admHost = "127.0.0.1";
+    uint16_t admPort = 4001;
+    uint32_t admMaxObjects = 16;
+    OutputConditioner::Params conditioning{};
     std::filesystem::path recordPath; // non-empty: record raw scans (.srec)
     std::filesystem::path replayPath; // non-empty: replay instead of sensors
     bool headless = false;            // no HTTP server (tests, benchmarks)
     std::optional<uint64_t> maxTicks; // run N ticks then stop (tests/CI)
+
+    // Applies the persistent project file onto this config (CLI overrides win
+    // because they are parsed afterwards).
+    void applyProject(const ProjectConfig& project);
 };
 
 // Live engine: sensors (simulator and/or Hokuyo drivers) -> Pipeline ->
@@ -53,7 +70,7 @@ public:
 
 private:
     std::vector<SensorPose> sensorLayout() const;
-    std::string snapshotToJson(const FrameSnapshot& snap) const;
+    std::string snapshotToJson(const FrameSnapshot& snap); // drains pending events
     std::string statusJson() const;
 
     EngineConfig config_;
@@ -62,6 +79,12 @@ private:
     std::vector<uint64_t> hokuyoSeqs_;
     Pipeline pipeline_;
     AugmentaOscOutput osc_;
+    TuioOutput tuio_;
+    AdmOscOutput adm_;
+    net::UdpSender eventOsc_; // /sillage/zone/* messages
+    OutputConditioner conditioner_;
+    ZoneEngine zoneEngine_;
+    std::vector<ZoneEvent> pendingEvents_; // between two UI broadcasts
     net::WsHttpServer server_;
     ScanRecorder recorder_;
     ScanReplayer replayer_;

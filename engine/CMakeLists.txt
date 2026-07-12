@@ -6,14 +6,18 @@
 add_library(sillage_core STATIC
     src/calib/collector.cpp
     src/calib/rigid2d.cpp
+    src/config/project.cpp
     src/core/background.cpp
+    src/core/json.cpp
     src/detect/clustering.cpp
     src/drivers/hokuyo/hokuyo_driver.cpp
     src/drivers/hokuyo/scip.cpp
     src/eval/metrics.cpp
     src/eval/scenarios.cpp
     src/io/augmenta_osc.cpp
+    src/io/ecosystem_outputs.cpp
     src/io/osc.cpp
+    src/logic/zones.cpp
     src/net/net.cpp
     src/net/ws_server.cpp
     src/pipeline/pipeline.cpp
@@ -60,6 +64,7 @@ if(BUILD_TESTING)
     add_executable(sillage_tests
         tests/calib_test.cpp
         tests/clustering_test.cpp
+        tests/config_zones_test.cpp
         tests/hokuyo_test.cpp
         tests/metrics_test.cpp
         tests/osc_test.cpp

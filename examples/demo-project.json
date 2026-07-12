@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "room": [10, 8],
+  "sim": true,
+  "sensors": [],
+  "zones": [
+    {
+      "name": "scene",
+      "polygon": [[1, 1], [5, 1], [5, 4], [1, 4]]
+    },
+    {
+      "name": "entree",
+      "polygon": [[6, 5], [9, 5], [9, 7.5], [6, 7.5]]
+    }
+  ],
+  "outputs": {
+    "augmentaOsc": { "enabled": true, "host": "127.0.0.1", "port": 12000 },
+    "tuio": { "enabled": true, "host": "127.0.0.1", "port": 3333 },
+    "admOsc": { "enabled": false, "host": "127.0.0.1", "port": 4001, "maxObjects": 16 }
+  },
+  "conditioning": { "predictionSeconds": 0.05, "smoothing": false }
+}

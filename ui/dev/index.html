@@ -104,6 +104,14 @@
     <h2>Personnes</h2>
     <div id="tracklist"><div class="row dim">aucune</div></div>
   </section>
+  <section class="glass" id="zones-panel" style="display:none">
+    <h2>Zones</h2>
+    <div id="zonelist"></div>
+  </section>
+  <section class="glass" id="events-panel" style="display:none">
+    <h2>Événements</h2>
+    <div id="eventlist"></div>
+  </section>
 </aside>
 
 <div id="learn-banner" class="glass">Apprentissage du fond — salle vide…</div>
@@ -122,6 +130,7 @@ const trackColors = ["#ffd166", "#06d6a0", "#ef476f", "#8ecae6", "#c77dff", "#f4
 let frame = null;
 let status = null;
 const trails = new Map();
+const eventLog = [];
 
 // --- View transform (pan / zoom) ---------------------------------------------
 const view = { zoom: 1, panX: 0, panY: 0, fitted: false };
@@ -197,6 +206,22 @@ function updatePanels() {
     el("h-tick").textContent = frame.health.tickMs.toFixed(1);
     el("learn-banner").style.display = frame.health.learning ? "block" : "none";
   }
+  if (frame.zones && frame.zones.length > 0) {
+    el("zones-panel").style.display = "block";
+    el("zonelist").innerHTML = frame.zones.map((z) =>
+      `<div class="row"><span class="grow">${z.name}</span>` +
+      `<b>${z.occ}</b><span class="dim">· ${z.entries} entrées</span></div>`
+    ).join("");
+  }
+  if (frame.events && frame.events.length > 0) {
+    el("events-panel").style.display = "block";
+    for (const ev of frame.events) {
+      eventLog.unshift(`#${ev.id} ${ev.type === "enter" ? "→" : "←"} ${ev.zone}`);
+    }
+    eventLog.length = Math.min(eventLog.length, 6);
+    el("eventlist").innerHTML =
+      eventLog.map((e) => `<div class="row dim">${e}</div>`).join("");
+  }
   const list = el("tracklist");
   if (frame.tracks.length === 0) {
     list.innerHTML = '<div class="row dim">aucune</div>';
@@ -251,6 +276,27 @@ function draw() {
   ctx.strokeStyle = "#2a3646";
   ctx.lineWidth = 2;
   ctx.strokeRect(X(0), Y(rh), rw * scale, rh * scale);
+
+  // Zones: translucent polygons with name + occupancy.
+  for (const z of frame.zones || []) {
+    if (z.poly.length < 3) continue;
+    ctx.beginPath();
+    ctx.moveTo(X(z.poly[0][0]), Y(z.poly[0][1]));
+    for (let i = 1; i < z.poly.length; i++) ctx.lineTo(X(z.poly[i][0]), Y(z.poly[i][1]));
+    ctx.closePath();
+    ctx.fillStyle = z.occ > 0 ? "rgba(56,225,255,0.10)" : "rgba(92,107,127,0.07)";
+    ctx.fill();
+    ctx.strokeStyle = z.occ > 0 ? "rgba(56,225,255,0.5)" : "rgba(92,107,127,0.4)";
+    ctx.lineWidth = 1.5 * devicePixelRatio;
+    ctx.setLineDash([6 * devicePixelRatio, 4 * devicePixelRatio]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    let cx = 0, cy = 0;
+    for (const [px, py] of z.poly) { cx += px; cy += py; }
+    ctx.fillStyle = z.occ > 0 ? "#38e1ff" : "#5c6b7f";
+    ctx.font = `${11 * devicePixelRatio}px "Inter", sans-serif`;
+    ctx.fillText(`${z.name} · ${z.occ}`, X(cx / z.poly.length), Y(cy / z.poly.length));
+  }
 
   // Sensors: position + heading tick.
   (frame.sensors || []).forEach(([sx, sy, st], i) => {

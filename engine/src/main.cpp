@@ -21,6 +21,7 @@ void handleSignal(int) {
 void printUsage() {
     std::printf("sillage-engine\n\n"
                 "  --http-port <port>   UI/API port           (default 8080)\n"
+                "  --http-bind <addr>   UI/API bind address   (default 127.0.0.1; 0.0.0.0 = LAN)\n"
                 "  --osc-host <host>    OSC destination       (default 127.0.0.1)\n"
                 "  --osc-port <port>    OSC port              (default 12000)\n"
                 "  --agents <n>         random walkers        (default 1, + 2 crossing)\n"
@@ -28,6 +29,8 @@ void printUsage() {
                 "  --room <WxH>         room size in meters   (default 10x8)\n"
                 "  --hokuyo <host[:port][@x,y,theta]>  add a real Hokuyo sensor\n"
                 "  --no-sim             disable the demo simulator (real sensors only)\n"
+                "  --config <file>      load a project file (CLI flags override)\n"
+                "  --save-config <file> write the current config as a project file, exit\n"
                 "  --ticks <n>          run n ticks, then exit (CI/smoke tests)\n"
                 "  --record <file>      record raw scans to a .srec file\n"
                 "  --replay <file>      replay a .srec file instead of sensors\n"
@@ -67,11 +70,26 @@ int main(int argc, char** argv) {
     // The dev UI sits next to the binary (copied at build time).
     config.uiRoot = std::filesystem::path(argv[0]).parent_path() / "ui";
 
+    // Pass 1: the project file loads first so every CLI flag can override it.
+    for (int i = 1; i + 1 < argc; ++i) {
+        if (std::string_view(argv[i]) == "--config") {
+            std::string error;
+            const auto project = sillage::ProjectConfig::load(argv[i + 1], error);
+            if (!project) {
+                std::fprintf(stderr, "config error: %s\n", error.c_str());
+                return 2;
+            }
+            config.applyProject(*project);
+        }
+    }
+
     for (int i = 1; i < argc; ++i) {
         const auto arg = std::string_view(argv[i]);
         const auto next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : ""; };
         if (arg == "--http-port") {
             config.httpPort = static_cast<uint16_t>(std::atoi(next()));
+        } else if (arg == "--http-bind") {
+            config.httpBind = next(); // 0.0.0.0 exposes the UI on the LAN
         } else if (arg == "--osc-host") {
             config.oscHost = next();
         } else if (arg == "--osc-port") {
@@ -117,6 +135,35 @@ int main(int argc, char** argv) {
             config.recordPath = next();
         } else if (arg == "--replay") {
             config.replayPath = next();
+        } else if (arg == "--config") {
+            next(); // handled in pass 1
+        } else if (arg == "--save-config") {
+            sillage::ProjectConfig project;
+            project.roomSize = config.roomSize;
+            project.simEnabled = config.simEnabled;
+            for (const auto& h : config.hokuyos) {
+                project.sensors.push_back({"hokuyo", h.host, h.port, h.pose});
+            }
+            project.zones = config.zones;
+            project.oscEnabled = config.oscEnabled;
+            project.oscHost = config.oscHost;
+            project.oscPort = config.oscPort;
+            project.tuioEnabled = config.tuioEnabled;
+            project.tuioHost = config.tuioHost;
+            project.tuioPort = config.tuioPort;
+            project.admEnabled = config.admEnabled;
+            project.admHost = config.admHost;
+            project.admPort = config.admPort;
+            project.admMaxObjects = config.admMaxObjects;
+            project.predictionSeconds = config.conditioning.predictionSeconds;
+            project.smoothing = config.conditioning.smoothing;
+            std::string error;
+            if (!project.save(next(), error)) {
+                std::fprintf(stderr, "save failed: %s\n", error.c_str());
+                return 1;
+            }
+            std::printf("config saved\n");
+            return 0;
         } else if (arg == "--headless") {
             config.headless = true;
         } else if (arg == "--eval") {

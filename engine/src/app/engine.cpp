@@ -51,13 +51,37 @@ std::vector<SensorPose> Engine::sensorLayout() const {
     return layout;
 }
 
+void EngineConfig::applyProject(const ProjectConfig& project) {
+    roomSize = project.roomSize;
+    simEnabled = project.simEnabled;
+    for (const SensorConfig& s : project.sensors) {
+        if (s.type == "hokuyo") {
+            hokuyos.push_back({s.host, s.port, s.pose});
+        }
+    }
+    zones = project.zones;
+    oscEnabled = project.oscEnabled;
+    oscHost = project.oscHost;
+    oscPort = project.oscPort;
+    tuioEnabled = project.tuioEnabled;
+    tuioHost = project.tuioHost;
+    tuioPort = project.tuioPort;
+    admEnabled = project.admEnabled;
+    admHost = project.admHost;
+    admPort = project.admPort;
+    admMaxObjects = project.admMaxObjects;
+    conditioning.predictionSeconds = project.predictionSeconds;
+    conditioning.smoothing = project.smoothing;
+}
+
 Engine::Engine(const EngineConfig& config)
     : config_(config), pipeline_([&] {
           PipelineConfig cfg;
           cfg.sensors = sensorLayout();
           cfg.backgroundBins = 1440; // covers both sim (720 rays) and UST (1081 steps)
           return cfg;
-      }()) {
+      }()),
+      conditioner_(config.conditioning), zoneEngine_(config.zones) {
     if (config_.simEnabled) {
         simulator_ = std::make_unique<Simulator>(
             demoSimParams(config_.roomSize, config_.randomAgents, config_.seed));
@@ -91,9 +115,21 @@ bool Engine::run() {
         }
         std::printf("UI      : http://%s:%u\n", config_.httpBind.c_str(), config_.httpPort);
     }
-    if (!osc_.open(config_.oscHost, config_.oscPort)) {
-        std::fprintf(stderr, "error: cannot open OSC destination %s:%u\n",
-                     config_.oscHost.c_str(), config_.oscPort);
+    if (config_.oscEnabled) {
+        if (!osc_.open(config_.oscHost, config_.oscPort)) {
+            std::fprintf(stderr, "error: cannot open OSC destination %s:%u\n",
+                         config_.oscHost.c_str(), config_.oscPort);
+            return false;
+        }
+        eventOsc_.open(config_.oscHost, config_.oscPort);
+    }
+    if (config_.tuioEnabled && !tuio_.open(config_.tuioHost, config_.tuioPort)) {
+        std::fprintf(stderr, "error: cannot open TUIO destination\n");
+        return false;
+    }
+    if (config_.admEnabled &&
+        !adm_.open(config_.admHost, config_.admPort, config_.admMaxObjects)) {
+        std::fprintf(stderr, "error: cannot open ADM-OSC destination\n");
         return false;
     }
     if (!config_.replayPath.empty()) {
@@ -155,9 +191,29 @@ bool Engine::run() {
             }
         }
 
-        const FrameSnapshot snap = pipeline_.process(frames, dt, tick, config_.roomSize);
+        FrameSnapshot snap = pipeline_.process(frames, dt, tick, config_.roomSize);
         if (!pipeline_.learning()) {
-            osc_.publish(snap);
+            // Published copy: conditioning applies to outputs, never to state.
+            snap.tracks = conditioner_.apply(snap.tracks, dt);
+            if (config_.oscEnabled) {
+                osc_.publish(snap);
+            }
+            if (config_.tuioEnabled) {
+                tuio_.publish(snap);
+            }
+            if (config_.admEnabled) {
+                adm_.publish(snap);
+            }
+            for (const ZoneEvent& event : zoneEngine_.update(snap.tracks)) {
+                if (config_.oscEnabled) {
+                    osc::Message msg("/sillage/zone/" + event.zone + "/" +
+                                     (event.type == ZoneEvent::Type::Enter ? "enter" : "exit"));
+                    msg.addInt32(static_cast<int32_t>(event.trackId));
+                    const auto bytes = msg.encode();
+                    eventOsc_.send(bytes.data(), bytes.size());
+                }
+                pendingEvents_.push_back(event);
+            }
         }
 
         const float tickMs =
@@ -234,7 +290,7 @@ std::string Engine::statusJson() const {
     return out;
 }
 
-std::string Engine::snapshotToJson(const FrameSnapshot& snap) const {
+std::string Engine::snapshotToJson(const FrameSnapshot& snap) {
     // Hand-rolled JSON: schema lives in protocol/ once the real API server
     // lands; M0/M1 keep the engine dependency-free.
     std::string out;
@@ -265,6 +321,32 @@ std::string Engine::snapshotToJson(const FrameSnapshot& snap) const {
                       static_cast<double>(layout[i].theta));
         out += buf;
     }
+
+    // Zones with occupancy + the events since the previous broadcast.
+    out += "],\"zones\":[";
+    const auto zoneStatus = zoneEngine_.status();
+    for (size_t z = 0; z < zoneStatus.size(); ++z) {
+        const auto& s = zoneStatus[z];
+        out += z ? "," : "";
+        out += "{\"name\":\"" + s.zone->name + "\",\"occ\":" + std::to_string(s.occupants) +
+               ",\"entries\":" + std::to_string(s.totalEntries) + ",\"poly\":[";
+        for (size_t p = 0; p < s.zone->polygon.size(); ++p) {
+            std::snprintf(buf, sizeof(buf), "%s[%.2f,%.2f]", p ? "," : "",
+                          static_cast<double>(s.zone->polygon[p].x),
+                          static_cast<double>(s.zone->polygon[p].y));
+            out += buf;
+        }
+        out += "]}";
+    }
+    out += "],\"events\":[";
+    for (size_t e = 0; e < pendingEvents_.size(); ++e) {
+        const ZoneEvent& ev = pendingEvents_[e];
+        out += e ? "," : "";
+        out += "{\"zone\":\"" + ev.zone + "\",\"type\":\"" +
+               (ev.type == ZoneEvent::Type::Enter ? "enter" : "exit") +
+               "\",\"id\":" + std::to_string(ev.trackId) + "}";
+    }
+    pendingEvents_.clear();
 
     out += "],\"points\":[";
     for (size_t i = 0; i < snap.foreground.size(); ++i) {

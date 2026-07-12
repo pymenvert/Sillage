@@ -1,0 +1,25 @@
+# systemd unit for the Sillage engine (Ubuntu 22.04+).
+# Install:
+#   sudo cp sillage.service /etc/systemd/system/
+#   sudo mkdir -p /var/lib/sillage && sudo cp project.json /var/lib/sillage/
+#   sudo systemctl enable --now sillage
+[Unit]
+Description=Sillage multi-LiDAR people tracking engine
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/sillage-engine --config /var/lib/sillage/project.json --http-bind 0.0.0.0
+WorkingDirectory=/var/lib/sillage
+Restart=on-failure
+RestartSec=2
+# Hardening: the engine needs the network and its data dir, nothing else.
+DynamicUser=yes
+StateDirectory=sillage
+ProtectSystem=strict
+ProtectHome=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

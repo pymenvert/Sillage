@@ -58,6 +58,37 @@ attendant, mesurez les poses au mètre.
 | `--headless` | sans serveur HTTP |
 | `--ticks n` | s'arrête après n ticks (tests) |
 
+## Le fichier projet
+
+Toute l'installation tient dans un JSON versionné (salle, capteurs, zones, sorties) —
+voir [examples/demo-project.json](../examples/demo-project.json) :
+
+```bash
+sillage-engine --save-config monprojet.json   # génère un fichier de départ
+sillage-engine --config monprojet.json        # le charge (les flags CLI ont priorité)
+```
+
+**Zones** : polygones nommés dans le repère salle. Chaque entrée/sortie émet un événement
+OSC (`/sillage/zone/<nom>/enter|exit <id>`), alimente les compteurs (occupants, entrées
+totales), le panneau Zones de l'UI et le fil d'événements.
+
+**Sorties** (activables par fichier projet) :
+| Sortie | Destination type | Consommateurs |
+|---|---|---|
+| `augmentaOsc` | 12000/udp | TouchDesigner, Unity, Unreal (plugins Augmenta) |
+| `tuio` (2Dcur) | 3333/udp | mapping, multitouch, vieux logiciels interactifs |
+| `admOsc` | 4001/udp | L-ISA, SPAT Revolution, d&b Soundscape (objets audio) |
+
+**Conditionnement** : `predictionSeconds` (compense la latence capteur+rendu en
+extrapolant les positions) et `smoothing` (filtre One-Euro — plus doux, un peu moins
+réactif). Appliqués aux sorties uniquement, jamais au tracker.
+
+## Lancer en service (24/7)
+
+Fichiers prêts dans [packaging/](../packaging/) : unité **systemd** (Ubuntu, durcie,
+redémarrage automatique), **launchd** (macOS), script d'installation **service Windows**
+avec recovery. `--http-bind 0.0.0.0` expose l'UI sur le LAN (tablette régie).
+
 ## Enregistrer et rejouer (boîte noire)
 
 ```bash
