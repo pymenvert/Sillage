@@ -39,7 +39,13 @@ bool BackgroundModel::isForeground(RangePoint p) const {
     if (p.distance <= 0.0f) {
         return false;
     }
-    const float bg = minRange_[binOf(p.angle)];
+    // Compare against the closest background among the bin and its neighbors:
+    // rays grazing an occluder's edge jitter between the occluder and whatever
+    // lies behind it (mixed-pixel artifact) — the neighbor check keeps those
+    // flickering edge points out of the foreground.
+    const uint32_t b = binOf(p.angle);
+    const auto n = static_cast<uint32_t>(minRange_.size());
+    const float bg = std::min({minRange_[b], minRange_[(b + 1) % n], minRange_[(b + n - 1) % n]});
     return p.distance < bg - margin_;
 }
 

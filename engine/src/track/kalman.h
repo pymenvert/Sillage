@@ -12,7 +12,10 @@ namespace sillage {
 class KalmanCV {
 public:
     struct Params {
-        float processAccelNoise = 2.0f; // m/s^2, white-noise acceleration
+        // Humans pivot hard: abrupt turnarounds reach several m/s^2. Too low a
+        // value makes the steady-state gate so tight that a sharp turn throws
+        // the measurement out of it (ghost births at every about-face).
+        float processAccelNoise = 4.5f; // m/s^2, white-noise acceleration
         float measurementNoise = 0.05f; // m, std dev of cluster centroids
         float initialVelocityVar = 1.5f;
     };

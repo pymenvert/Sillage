@@ -6,10 +6,13 @@
 add_library(sillage_core STATIC
     src/core/background.cpp
     src/detect/clustering.cpp
+    src/eval/metrics.cpp
+    src/eval/scenarios.cpp
     src/io/augmenta_osc.cpp
     src/io/osc.cpp
     src/net/net.cpp
     src/net/ws_server.cpp
+    src/pipeline/pipeline.cpp
     src/sim/simulator.cpp
     src/track/tracker.cpp
     src/app/engine.cpp
@@ -51,7 +54,9 @@ if(BUILD_TESTING)
 
     add_executable(sillage_tests
         tests/clustering_test.cpp
+        tests/metrics_test.cpp
         tests/osc_test.cpp
+        tests/scenarios_test.cpp
         tests/tracker_test.cpp
         tests/ws_handshake_test.cpp
     )

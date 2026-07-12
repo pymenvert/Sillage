@@ -59,6 +59,10 @@ struct Cluster {
     Vec2 centroid{};
     float radius = 0.0f; // RMS spread, meters
     uint32_t pointCount = 0;
+    std::vector<uint32_t> members; // indices into the foreground point array
+    // Part manufactured by prediction-seeded splitting: usable as measurement
+    // for existing tracks, but must never spawn a new track (ghost births).
+    bool fromPredictionSplit = false;
 };
 
 enum class TrackState : uint8_t {

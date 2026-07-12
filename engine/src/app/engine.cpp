@@ -9,20 +9,48 @@ namespace sillage {
 
 namespace {
 
-// Two virtual lidars in opposite corners: multi-sensor from the first line of
-// code, so fusion never becomes a retrofit.
-std::vector<SensorPose> defaultSensorLayout(Vec2 roomSize) {
+constexpr Vec2 kDemoRoom{10.0f, 8.0f};
+
+// Two lidars in opposite corners: multi-sensor from the first line of code.
+std::vector<SensorPose> demoSensorLayout() {
     return {
         {{0.15f, 0.15f}, 0.0f},
-        {{roomSize.x - 0.15f, roomSize.y - 0.15f}, 3.14159265f},
+        {{kDemoRoom.x - 0.15f, kDemoRoom.y - 0.15f}, 3.14159265f},
     };
+}
+
+Simulator::Params demoSimParams(uint32_t randomAgents, uint32_t seed) {
+    Simulator::Params p;
+    p.roomSize = kDemoRoom;
+    p.seed = seed;
+    // Two agents ping-pong the diagonals (repeated crossings at the center),
+    // spawning after the background learn phase.
+    p.agents = {
+        {{1.0f, 1.0f}, {9.0f, 7.0f}, 1.0f, Simulator::Motion::PingPong, 1.5f},
+        {{1.0f, 7.0f}, {9.0f, 1.0f}, 1.2f, Simulator::Motion::PingPong, 1.5f},
+    };
+    for (uint32_t i = 0; i < randomAgents; ++i) {
+        p.agents.push_back({{2.0f + static_cast<float>(i), 4.0f},
+                            {8.0f - static_cast<float>(i % 3), 5.0f},
+                            0.8f,
+                            Simulator::Motion::Random,
+                            1.5f});
+    }
+    return p;
+}
+
+PipelineConfig demoPipelineConfig() {
+    PipelineConfig cfg;
+    cfg.sensors = demoSensorLayout();
+    return cfg;
 }
 
 } // namespace
 
-Engine::Engine(EngineConfig config)
-    : config_(std::move(config)), simulator_(config_.sim), tracker_(config_.tracker) {
-    for (const SensorPose& pose : defaultSensorLayout(config_.sim.roomSize)) {
+Engine::Engine(const EngineConfig& config)
+    : config_(config), simulator_(demoSimParams(config.randomAgents, config.seed)),
+      pipeline_(demoPipelineConfig()) {
+    for (const SensorPose& pose : demoSensorLayout()) {
         simulator_.addSensor(pose);
     }
 }
@@ -43,13 +71,7 @@ bool Engine::run() {
     }
     std::printf("OSC     : %s:%u (Augmenta legacy)\n", config_.oscHost.c_str(), config_.oscPort);
     std::printf("Tick    : %.0f Hz, %zu virtual sensor(s), learning background...\n",
-                static_cast<double>(config_.tickHz), static_cast<size_t>(2));
-
-    const auto sensorCount = static_cast<size_t>(2);
-    backgrounds_.clear();
-    for (size_t i = 0; i < sensorCount; ++i) {
-        backgrounds_.emplace_back(config_.sim.raysPerScan, config_.backgroundLearnFrames, 0.15f);
-    }
+                static_cast<double>(config_.tickHz), simulator_.sensorCount());
 
     const float dt = 1.0f / config_.tickHz;
     const auto tickPeriod =
@@ -59,7 +81,16 @@ bool Engine::run() {
     uint64_t tick = 0;
     auto nextTick = Clock::now();
     while (running_) {
-        tickOnce(dt, tick);
+        const std::vector<ScanFrame> frames = simulator_.step(dt, Clock::now());
+        const FrameSnapshot snap = pipeline_.process(frames, dt, tick, simulator_.roomSize());
+
+        if (!pipeline_.learning()) {
+            osc_.publish(snap);
+        }
+        if (!config_.headless && tick % 2 == 0) { // UI at ~30 Hz
+            server_.broadcast(snapshotToJson(snap));
+        }
+
         ++tick;
         if (config_.maxTicks && tick >= *config_.maxTicks) {
             break;
@@ -71,52 +102,9 @@ bool Engine::run() {
     return true;
 }
 
-void Engine::tickOnce(float dt, uint64_t tick) {
-    const std::vector<ScanFrame> frames = simulator_.step(dt, Clock::now());
-
-    // Background learning phase: feed the models with an empty-ish room.
-    // The simulator has agents from tick 0, so the learned background contains
-    // walls plus wherever agents started — good enough for the M0 skeleton;
-    // the real learn step (explicit empty-room capture) is part of M1.
-    FrameSnapshot snap;
-    snap.tick = tick;
-    snap.timeSeconds = static_cast<double>(tick) * static_cast<double>(dt);
-    snap.roomSize = simulator_.roomSize();
-
-    const auto layout = defaultSensorLayout(config_.sim.roomSize);
-    bool anyLearning = false;
-    for (const ScanFrame& frame : frames) {
-        BackgroundModel& bg = backgrounds_[frame.sensor];
-        if (bg.learning()) {
-            bg.learn(frame);
-            anyLearning = true;
-            continue;
-        }
-        for (const RangePoint& p : frame.points) {
-            if (bg.isForeground(p)) {
-                snap.foreground.push_back({layout[frame.sensor].toRoom(p), frame.sensor});
-            }
-        }
-    }
-
-    if (!anyLearning) {
-        snap.clusters = clusterPoints(snap.foreground, config_.clustering);
-        snap.tracks = tracker_.update(snap.clusters, dt, tick);
-        osc_.publish(snap);
-    }
-
-    if (!config_.headless) {
-        // Decimate UI updates to ~30 Hz; points capped by construction (2 lidars).
-        if (tick % 2 == 0) {
-            server_.broadcast(snapshotToJson(snap));
-        }
-    }
-    snapshot_ = std::move(snap);
-}
-
 std::string Engine::snapshotToJson(const FrameSnapshot& snap) const {
     // Hand-rolled JSON: schema lives in protocol/ once the real API server
-    // lands; M0 keeps the engine dependency-free.
+    // lands; M0/M1 keep the engine dependency-free.
     std::string out;
     out.reserve(snap.foreground.size() * 24 + snap.tracks.size() * 96 + 128);
     char buf[128];
