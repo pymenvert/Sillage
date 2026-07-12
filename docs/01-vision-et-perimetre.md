@@ -17,8 +17,10 @@ avec plusieurs différenciateurs (voir plus bas).
 1. **Salle immersive / art numérique** — le contenu projeté réagit à la position des visiteurs.
    Contraintes : latence faible (< 1 frame de contenu), IDs stables (un effet suit *une*
    personne), pénombre (le LiDAR s'en moque, avantage vs caméras).
-2. **Scénographie / spectacle** — un performer déclenche lumières/son/vidéo. Contraintes :
-   fiabilité absolue pendant le show, mode dégradé si un capteur tombe.
+2. **Scénographie / spectacle** — un performer déclenche lumières/son/vidéo, poursuite
+   lumière automatique (via PSN vers les consoles), son objet qui suit le performer
+   (via ADM-OSC vers L-ISA / SPAT / d&b Soundscape). Contraintes : fiabilité absolue
+   pendant le show, mode dégradé si un capteur tombe.
 3. **Musée / exposition** — zones interactives, comptage, analytique de parcours.
 4. **Retail / événementiel** — heatmaps, files d'attente, comptage entrées/sorties.
 
@@ -82,6 +84,19 @@ sur capteur). Tous visent l'industriel : tarification enterprise, intégrations 
 aucun ne parle OSC ni ne s'intègre à l'écosystème créatif. **La niche
 immersif/scénographie/événementiel, avec du matériel ouvert et la compatibilité Augmenta,
 est libre** — et ces acteurs valident la pertinence technique du LiDAR 3D pour la foule.
+
+Côté spectacle vivant, [Naostage](https://www.naostage.com/) (K SYSTEM) est la référence
+« beaconless » : capteur KAPTA multi-modal (1 caméra visible + 2 proche-IR + 2 thermiques
++ projecteurs IR, monté à ~10 m, ~20×15 m couverts), serveur IA KORE, 16–64 cibles,
+précision centimétrique, ré-identification visuelle des performers, module UWB BEAKON en
+complément hors ligne de vue. Enseignements pour Sillage : (a) leur module UWB valide
+notre ancrage d'identité par balise (M6) ; (b) leur marché parle **PSN** et **ADM-OSC**
+— intégrés à notre M4 ; (c) leur approche caméras+IA capture l'apparence (ré-ID
+visuelle possible mais données d'images, RGPD plus lourd, nuit totale gérée par IR
+embarqué) là où le LiDAR reste anonyme par nature et insensible à la lumière — les deux
+approches sont complémentaires, pas identiques. Sillage ne cherche pas à cloner KAPTA :
+il apporte le tracking anonyme, ouvert et abordable, avec les mêmes protocoles de sortie
+vers les mêmes consoles.
 
 ## Technologies capteurs évaluées
 

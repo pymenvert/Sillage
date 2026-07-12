@@ -14,8 +14,10 @@
 - **Fusion multi-LiDAR** : plusieurs capteurs couvrent une même salle, fusionnés au niveau des
   points dans un référentiel commun — les angles morts d'un capteur sont couverts par les autres.
 - **Calibration assistée** : positionnement manuel drag & drop + auto-calibration « en marchant ».
-- **Sorties standard** : OSC (compatible protocole Augmenta), WebSocket JSON, TUIO, MQTT —
-  compatible immédiatement avec l'écosystème créatif existant.
+- **Sorties standard** : OSC (compatible protocole Augmenta), WebSocket JSON, TUIO,
+  **PSN** (consoles lumière : grandMA3, disguise…), **ADM-OSC** (audio spatialisé :
+  L-ISA, SPAT, d&b Soundscape), MQTT — compatible immédiatement avec les écosystèmes
+  créatif **et** spectacle vivant.
 - **Interface web moderne** embarquée : configuration depuis n'importe quel navigateur,
   y compris une tablette sur site.
 - **Enregistrement / replay** : rejouer une session capteur à l'identique pour déboguer,

@@ -57,6 +57,9 @@ un tracking calibré en < 30 min, UI seule, doc non ouverte.
 - OSC Augmenta v1/V2 + WebSocket Augmenta **validés contre les plugins officiels**
   TouchDesigner / Unity / Unreal (harnais de conformité).
 - TUIO, OSC générique, MQTT/webhooks, export CSV/JSONL.
+- **PSN (PosiStageNet)** — consoles lumière (grandMA3 : poursuite automatique), disguise,
+  WATCHOUT — et **ADM-OSC** — audio objet (L-ISA, SPAT, d&b Soundscape). Les deux
+  protocoles du spectacle vivant, spec ouverte et implémentation de référence disponibles.
 - Prédiction (compensation de latence) et lissage One-Euro par sortie.
 - **Driver Livox Mid-360 en mode « tranche 2D »** : le nuage 3D est découpé en bande de
   hauteur configurable et alimente le pipeline existant tel quel — premier capteur 3D
@@ -88,6 +91,7 @@ de test.
 3. **Architecture distribuée** `sillage-node` → engine central (grands sites), sync PTP.
 4. **Ancrage d'identité par balise UWB** (performers) : fusion balise portée + track LiDAR —
    l'ID d'un danseur désigné ne peut jamais se perdre, le public reste tracké sans tag.
+   (Approche validée par le marché : c'est le rôle du module BEAKON chez Naostage.)
 5. **Radar mmWave en capteur de présence complémentaire** (personnes immobiles, fumée
    scénique — là où le LiDAR est aveuglé ou le fond adaptatif absorbe).
 6. Ré-ID par cadence de pas (expérimental, voir [03 §7](03-tracking-et-fusion.md)).
