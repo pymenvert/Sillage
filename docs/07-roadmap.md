@@ -6,6 +6,11 @@
 > simulé (validation matérielle en attente du premier capteur physique), driver RPLIDAR
 > non commencé (nécessite le matériel), UI live avec panneaux santé. Pipeline mesuré à
 > ~0,25 ms/tick (2 capteurs, 5 personnes) — budget < 10 ms très largement tenu.
+> **Entamé sur M2** : cœur d'auto-calibration par marche (Horn 2D + RANSAC + correction
+> du biais de surface) validé en simulation — pose retrouvée à < 5 cm / 1,4° sur une
+> marche de 30 s. **Enregistrement/replay** `.srec` livré (`--record`/`--replay`,
+> replay déterministe testé ; migration MCAP à l'arrivée de vcpkg, cf. ADR-005).
+> Reste : UI de calibration (M3), branchement du solveur sur le mode live, résidu foule.
 
 Principe : **squelette marchant d'abord** — dès M0, la chaîne complète capteur→sortie
 existe de bout en bout, et chaque jalon l'épaissit. On peut faire une démo à la fin de

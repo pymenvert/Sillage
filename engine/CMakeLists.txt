@@ -4,6 +4,8 @@
 # dependencies (Eigen, spdlog, uWebSockets, mcap) in M1.
 
 add_library(sillage_core STATIC
+    src/calib/collector.cpp
+    src/calib/rigid2d.cpp
     src/core/background.cpp
     src/detect/clustering.cpp
     src/drivers/hokuyo/hokuyo_driver.cpp
@@ -15,6 +17,7 @@ add_library(sillage_core STATIC
     src/net/net.cpp
     src/net/ws_server.cpp
     src/pipeline/pipeline.cpp
+    src/record/recorder.cpp
     src/sim/simulator.cpp
     src/track/tracker.cpp
     src/app/engine.cpp
@@ -55,10 +58,12 @@ if(BUILD_TESTING)
     FetchContent_MakeAvailable(googletest)
 
     add_executable(sillage_tests
+        tests/calib_test.cpp
         tests/clustering_test.cpp
         tests/hokuyo_test.cpp
         tests/metrics_test.cpp
         tests/osc_test.cpp
+        tests/recorder_test.cpp
         tests/scenarios_test.cpp
         tests/tracker_test.cpp
         tests/ws_handshake_test.cpp

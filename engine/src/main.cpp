@@ -29,6 +29,8 @@ void printUsage() {
                 "  --hokuyo <host[:port][@x,y,theta]>  add a real Hokuyo sensor\n"
                 "  --no-sim             disable the demo simulator (real sensors only)\n"
                 "  --ticks <n>          run n ticks, then exit (CI/smoke tests)\n"
+                "  --record <file>      record raw scans to a .srec file\n"
+                "  --replay <file>      replay a .srec file instead of sensors\n"
                 "  --headless           no HTTP server\n"
                 "  --eval               run the MOT scenario library and exit\n");
 }
@@ -111,6 +113,10 @@ int main(int argc, char** argv) {
             config.simEnabled = false;
         } else if (arg == "--ticks") {
             config.maxTicks = static_cast<uint64_t>(std::atoll(next()));
+        } else if (arg == "--record") {
+            config.recordPath = next();
+        } else if (arg == "--replay") {
+            config.replayPath = next();
         } else if (arg == "--headless") {
             config.headless = true;
         } else if (arg == "--eval") {

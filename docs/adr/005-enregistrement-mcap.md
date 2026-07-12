@@ -2,6 +2,12 @@
 
 **Statut** : accepté · **Date** : 2026-07-12
 
+> **Note d'implémentation (2026-07-12)** : en attendant l'arrivée de vcpkg (et donc de la
+> dépendance mcap+zstd), un format natif provisoire `.srec` (binaire versionné, replay
+> déterministe testé) porte la fonctionnalité — voir `engine/src/record/`. La migration
+> vers MCAP fournira un convertisseur `.srec` → `.mcap` ; le format `.srec` ne fait
+> l'objet d'aucune garantie de stabilité au-delà.
+
 ## Contexte
 
 La boîte noire et le replay déterministe ([02](../02-architecture.md), [09](../09-outils-maintenance-debug.md))

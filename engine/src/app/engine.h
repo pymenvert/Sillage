@@ -5,6 +5,7 @@
 #include "io/augmenta_osc.h"
 #include "net/ws_server.h"
 #include "pipeline/pipeline.h"
+#include "record/recorder.h"
 #include "sim/simulator.h"
 
 #include <atomic>
@@ -34,6 +35,8 @@ struct EngineConfig {
     uint32_t randomAgents = 1; // demo walkers besides the two crossing agents
     uint32_t seed = 42;
     std::vector<HokuyoSensorConfig> hokuyos; // real sensors (appended after sim)
+    std::filesystem::path recordPath; // non-empty: record raw scans (.srec)
+    std::filesystem::path replayPath; // non-empty: replay instead of sensors
     bool headless = false;            // no HTTP server (tests, benchmarks)
     std::optional<uint64_t> maxTicks; // run N ticks then stop (tests/CI)
 };
@@ -60,6 +63,8 @@ private:
     Pipeline pipeline_;
     AugmentaOscOutput osc_;
     net::WsHttpServer server_;
+    ScanRecorder recorder_;
+    ScanReplayer replayer_;
     std::atomic<bool> running_{false};
 
     // Load stats, published on /api/status and the WS health payload.

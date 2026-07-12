@@ -58,6 +58,16 @@ attendant, mesurez les poses au mètre.
 | `--headless` | sans serveur HTTP |
 | `--ticks n` | s'arrête après n ticks (tests) |
 
+## Enregistrer et rejouer (boîte noire)
+
+```bash
+sillage-engine --record session.srec       # enregistre les scans bruts en parallèle
+sillage-engine --replay session.srec       # rejoue à l'identique (UI + OSC compris)
+```
+
+Le replay est **déterministe** : mêmes scans ⇒ mêmes tracks (testé). Un problème sur
+site se capture avec `--record` et se rejoue au bureau, réglages et debug compris.
+
 ## Outils de validation et de debug
 
 ```bash

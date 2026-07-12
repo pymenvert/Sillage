@@ -96,6 +96,22 @@ bool Engine::run() {
                      config_.oscHost.c_str(), config_.oscPort);
         return false;
     }
+    if (!config_.replayPath.empty()) {
+        if (!replayer_.open(config_.replayPath)) {
+            std::fprintf(stderr, "error: cannot open replay file %s\n",
+                         config_.replayPath.string().c_str());
+            return false;
+        }
+        std::printf("Replay  : %s\n", config_.replayPath.string().c_str());
+    }
+    if (!config_.recordPath.empty()) {
+        if (!recorder_.open(config_.recordPath)) {
+            std::fprintf(stderr, "error: cannot open record file %s\n",
+                         config_.recordPath.string().c_str());
+            return false;
+        }
+        std::printf("Record  : %s\n", config_.recordPath.string().c_str());
+    }
     for (auto& driver : hokuyos_) {
         driver->start();
     }
@@ -116,12 +132,26 @@ bool Engine::run() {
         const auto tickStart = Clock::now();
 
         std::vector<ScanFrame> frames;
-        if (simulator_) {
-            frames = simulator_->step(dt, tickStart);
+        if (!config_.replayPath.empty()) {
+            auto next = replayer_.nextTick();
+            if (!next) {
+                std::printf("Replay finished.\n");
+                break;
+            }
+            frames = std::move(next->second);
+        } else {
+            if (simulator_) {
+                frames = simulator_->step(dt, tickStart);
+            }
+            for (size_t i = 0; i < hokuyos_.size(); ++i) {
+                if (auto frame = hokuyos_[i]->latestFrame(hokuyoSeqs_[i])) {
+                    frames.push_back(std::move(*frame));
+                }
+            }
         }
-        for (size_t i = 0; i < hokuyos_.size(); ++i) {
-            if (auto frame = hokuyos_[i]->latestFrame(hokuyoSeqs_[i])) {
-                frames.push_back(std::move(*frame));
+        if (recorder_.isOpen()) {
+            for (const ScanFrame& frame : frames) {
+                recorder_.write(tick, frame);
             }
         }
 
