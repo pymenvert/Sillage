@@ -5,9 +5,9 @@
 > identifiants persistants, et diffuse leurs positions vers les logiciels créatifs
 > (TouchDesigner, Unity, Unreal, Madmapper, Resolume…).
 
-**Statut : M0 terminé, M1 en cours** — le moteur tourne (simulateur + Hokuyo), le tracker
-tient 5/6 scénarios de robustesse à 0 échange d'ID, l'UI live fonctionne.
-Voir le [guide de démarrage](docs/10-guide-demarrage.md) et la [roadmap](docs/07-roadmap.md).
+**Statut : v1.0.0** — voir le [CHANGELOG](CHANGELOG.md), le
+[guide de démarrage](docs/10-guide-demarrage.md) et les limitations connues (validation
+sur matériel physique en tête de la feuille de route post-1.0).
 
 ```bash
 cmake --preset windows-msvc && cmake --build --preset windows-msvc

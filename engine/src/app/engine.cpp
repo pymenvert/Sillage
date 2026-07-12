@@ -397,7 +397,7 @@ std::string Engine::statusJson() const {
     std::snprintf(buf, sizeof(buf),
                   "{\"version\":\"%s\",\"tickMsAvg\":%.3f,\"tickMsMax\":%.3f,\"tracks\":%u,"
                   "\"learning\":%s,\"clients\":%zu,\"sensors\":[",
-                  "0.1.0", static_cast<double>(avg), static_cast<double>(mx), tracks,
+                  SILLAGE_VERSION, static_cast<double>(avg), static_cast<double>(mx), tracks,
                   learning ? "true" : "false", server_.clientCount());
     out += buf;
     bool first = true;

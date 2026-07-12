@@ -31,6 +31,7 @@ add_library(sillage_core STATIC
 )
 
 target_include_directories(sillage_core PUBLIC src)
+target_compile_definitions(sillage_core PUBLIC SILLAGE_VERSION="${PROJECT_VERSION}")
 
 if(MSVC)
     target_compile_options(sillage_core PUBLIC /W4 /WX /permissive- /utf-8)
