@@ -1,5 +1,23 @@
 # 10 — Guide de démarrage
 
+## Installer (sans compiler)
+
+Deux formats, produits par la CI de release à chaque tag `v*` :
+
+- **Installeur Windows en un fichier** — `sillage-setup-<version>.exe` : installe dans
+  Program Files, raccourcis menu Démarrer, option « service Windows 24/7 » cochable à
+  l'installation, désinstalleur propre. (Script : `packaging/windows/sillage.iss`.)
+- **Version portable** — `sillage-<version>-portable-<os>.zip|.tar.gz` (~300 Ko) :
+  décompressez n'importe où, lancez `run-sillage.bat` (Windows) ou `./run-sillage.sh`
+  (Linux/macOS) — le moteur démarre et l'interface s'ouvre. Aucun droit admin, aucune
+  trace hors du dossier. Idéal clé USB / machine de prestation.
+
+```bash
+# construire le portable localement :
+cmake --preset windows-msvc && cmake --build --preset windows-msvc
+cd build/windows-msvc && cpack -C Release
+```
+
 ## Compiler
 
 Prérequis : CMake ≥ 3.24 et un compilateur C++20 (MSVC 2022, GCC 11+, AppleClang 14+).

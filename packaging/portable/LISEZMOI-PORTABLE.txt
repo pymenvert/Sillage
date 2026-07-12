@@ -1,0 +1,26 @@
+SILLAGE — version portable
+==========================
+
+Aucune installation, aucun droit administrateur : décompressez ce dossier
+n'importe où (clé USB comprise) et lancez :
+
+  Windows : run-sillage.bat
+  Linux / macOS : ./run-sillage.sh
+
+Le moteur démarre en mode démo (capteurs simulés) et l'interface s'ouvre sur
+http://127.0.0.1:8080. Fermez la fenêtre (ou Ctrl+C) pour arrêter.
+
+Pour une vraie installation :
+  sillage-engine --save-config monprojet.json     # génère un fichier projet
+  (éditez : salle, capteurs LiDAR, zones, sorties — voir examples/)
+  sillage-engine --config monprojet.json
+
+Options :  sillage-engine --help
+Documentation complète : docs/10-guide-demarrage.md dans le dépôt du projet.
+
+Données envoyées :
+  OSC Augmenta  -> 127.0.0.1:12000  (TouchDesigner, Unity, Unreal…)
+  TUIO / ADM-OSC selon le fichier projet
+
+Fonctionnement 24/7 en service systemd / launchd / service Windows :
+voir le dossier packaging/.

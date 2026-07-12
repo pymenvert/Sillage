@@ -59,6 +59,8 @@ if(BUILD_TESTING)
     )
     # MSVC: link gtest against the shared CRT like the rest of the project.
     set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+    # Test-only dependency: keep it out of installed/packaged artifacts.
+    set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(googletest)
 
     add_executable(sillage_tests

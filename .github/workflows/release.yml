@@ -1,0 +1,56 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  portable:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            preset: windows-msvc
+          - os: ubuntu-22.04
+            preset: linux
+          - os: macos-15
+            preset: macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure, build, test
+        run: |
+          cmake --preset ${{ matrix.preset }}
+          cmake --build --preset ${{ matrix.preset }}
+          ctest --preset ${{ matrix.preset }}
+
+      - name: Package portable
+        shell: bash
+        run: |
+          cd build/${{ matrix.preset }}
+          cpack -C Release
+          ls sillage-*-portable-*
+
+      - name: Build Windows installer (Inno Setup)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            /DBinDir="${{ github.workspace }}\build\windows-msvc\engine\Release" `
+            /DVersion="$version" `
+            /O"${{ github.workspace }}\dist" `
+            packaging\windows\sillage.iss
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/${{ matrix.preset }}/sillage-*-portable-*.zip
+            build/${{ matrix.preset }}/sillage-*-portable-*.tar.gz
+            dist/sillage-setup-*.exe
