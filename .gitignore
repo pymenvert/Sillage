@@ -1,0 +1,21 @@
+# Build
+build/
+out/
+cmake-build-*/
+
+# Dependencies
+node_modules/
+vcpkg_installed/
+
+# IDE / tooling caches
+.vs/
+.idea/
+.cache/
+*.user
+
+# OS noise
+Thumbs.db
+.DS_Store
+
+# Local data (recordings, learned backgrounds) — versioned via Git LFS in datasets/ only
+*.sillage-rec
