@@ -102,6 +102,8 @@
     position: absolute; bottom: 12px; left: 14px;
     padding: 6px 12px; color: var(--dim); font-size: 11px; z-index: 10;
   }
+  body.presentation header, body.presentation aside,
+  body.presentation #toolbar, body.presentation footer { display: none; }
 </style>
 </head>
 <body>
@@ -119,8 +121,10 @@
 <div id="toolbar" class="glass">
   <button id="mode-nav" class="active" title="molette zoom · glisser déplacer">Naviguer</button>
   <button id="mode-zone" title="clic : sommets · double-clic : fermer · Échap : annuler">+ Zone</button>
+  <button id="mode-pres" title="mode présentation (P) : plein écran épuré">Présenter</button>
   <div class="sep"></div>
   <label><input type="checkbox" id="ly-points" checked> points</label>
+  <label><input type="checkbox" id="ly-fov" checked> visée capteurs</label>
   <label><input type="checkbox" id="ly-trails" checked> trajectoires</label>
   <label><input type="checkbox" id="ly-zones" checked> zones</label>
   <label><input type="checkbox" id="ly-heat"> heatmap</label>
@@ -218,6 +222,7 @@ canvas.addEventListener("click", (e) => {
 });
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && mode === "zone") setMode("nav");
+  if (e.key === "p" || e.key === "P") document.body.classList.toggle("presentation");
 });
 
 function resize() {
@@ -240,6 +245,7 @@ function setMode(m) {
 }
 el("mode-nav").onclick = () => setMode("nav");
 el("mode-zone").onclick = () => setMode("zone");
+el("mode-pres").onclick = () => document.body.classList.toggle("presentation");
 
 async function finishZone() {
   if (drawingZone.length < 3) { toast("3 sommets minimum", false); return; }
@@ -489,9 +495,17 @@ function draw() {
     }
   }
 
-  // Sensors.
+  // Sensors: marker + heading + faint aiming cone.
   (frame.sensors || []).forEach(([sx, sy, st], i) => {
     const c = sensorColors[i % sensorColors.length];
+    if (el("ly-fov").checked) {
+      ctx.beginPath();
+      ctx.moveTo(X(sx), Y(sy));
+      ctx.arc(X(sx), Y(sy), 2.2 * T.scale, -(st + 0.8), -(st - 0.8));
+      ctx.closePath();
+      ctx.fillStyle = c + "12"; // ~7% alpha hex suffix
+      ctx.fill();
+    }
     ctx.fillStyle = c;
     ctx.beginPath(); ctx.arc(X(sx), Y(sy), 5 * devicePixelRatio, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = c; ctx.lineWidth = 2 * devicePixelRatio;
@@ -525,11 +539,14 @@ function draw() {
       }
       ctx.globalAlpha = 1;
     }
-    ctx.strokeStyle = color; ctx.lineWidth = 2 * devicePixelRatio;
+    const glow = document.body.classList.contains("presentation");
+    if (glow) { ctx.shadowColor = color; ctx.shadowBlur = 18 * devicePixelRatio; }
+    ctx.strokeStyle = color; ctx.lineWidth = (glow ? 3 : 2) * devicePixelRatio;
     ctx.setLineDash(t.coast ? [4 * devicePixelRatio, 4 * devicePixelRatio] : []);
     ctx.beginPath();
     ctx.arc(X(t.x), Y(t.y), Math.max(t.r, 0.15) * T.scale, 0, Math.PI * 2);
     ctx.stroke(); ctx.setLineDash([]);
+    ctx.shadowBlur = 0;
     ctx.beginPath(); ctx.moveTo(X(t.x), Y(t.y));
     ctx.lineTo(X(t.x + t.vx * 0.6), Y(t.y + t.vy * 0.6)); ctx.stroke();
     ctx.fillStyle = color;

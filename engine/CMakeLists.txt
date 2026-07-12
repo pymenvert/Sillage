@@ -11,6 +11,9 @@ add_library(sillage_core STATIC
     src/core/json.cpp
     src/detect/clustering.cpp
     src/drivers/hokuyo/hokuyo_driver.cpp
+    src/drivers/sick/cola.cpp
+    src/drivers/sick/sick_driver.cpp
+    src/drivers/udpbridge/udp_bridge.cpp
     src/drivers/hokuyo/scip.cpp
     src/eval/metrics.cpp
     src/eval/scenarios.cpp
@@ -68,6 +71,7 @@ if(BUILD_TESTING)
         tests/calib_test.cpp
         tests/clustering_test.cpp
         tests/config_zones_test.cpp
+        tests/drivers_test.cpp
         tests/hokuyo_test.cpp
         tests/metrics_test.cpp
         tests/osc_test.cpp

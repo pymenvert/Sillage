@@ -36,6 +36,22 @@ private:
     std::vector<uint8_t> destAddr_; // sockaddr storage
 };
 
+class UdpReceiver {
+public:
+    UdpReceiver() = default;
+    ~UdpReceiver() { close(); }
+    UdpReceiver(const UdpReceiver&) = delete;
+    UdpReceiver& operator=(const UdpReceiver&) = delete;
+
+    bool bind(const std::string& bindHost, uint16_t port, int recvTimeoutMs);
+    // One datagram; <= 0 on timeout/close.
+    int receive(void* buffer, size_t size);
+    void close();
+
+private:
+    SocketHandle socket_ = kInvalidSocket;
+};
+
 class TcpListener {
 public:
     TcpListener() = default;

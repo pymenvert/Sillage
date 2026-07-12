@@ -3,6 +3,9 @@
 #include "core/types.h"
 #include "drivers/hokuyo/hokuyo_driver.h"
 #include "config/project.h"
+#include "drivers/driver.h"
+#include "drivers/sick/sick_driver.h"
+#include "drivers/udpbridge/udp_bridge.h"
 #include "io/augmenta_osc.h"
 #include "io/ecosystem_outputs.h"
 #include "logic/zones.h"
@@ -20,12 +23,6 @@
 
 namespace sillage {
 
-struct HokuyoSensorConfig {
-    std::string host;
-    uint16_t port = 10940;
-    SensorPose pose{};
-};
-
 struct EngineConfig {
     float tickHz = 60.0f;
     std::string httpBind = "127.0.0.1";
@@ -37,7 +34,7 @@ struct EngineConfig {
     bool simEnabled = true;    // virtual sensors + agents (demo mode)
     uint32_t randomAgents = 1; // demo walkers besides the two crossing agents
     uint32_t seed = 42;
-    std::vector<HokuyoSensorConfig> hokuyos; // real sensors (appended after sim)
+    std::vector<SensorConfig> sensors; // real sensors, any driver type (after sim)
     std::vector<ZoneConfig> zones;
     bool oscEnabled = true;
     bool tuioEnabled = false;
@@ -81,8 +78,8 @@ private:
 
     EngineConfig config_;
     std::unique_ptr<Simulator> simulator_; // null when simEnabled is false
-    std::vector<std::unique_ptr<HokuyoDriver>> hokuyos_;
-    std::vector<uint64_t> hokuyoSeqs_;
+    std::vector<std::unique_ptr<ISensorDriver>> drivers_;
+    std::vector<uint64_t> driverSeqs_;
     Pipeline pipeline_;
     AugmentaOscOutput osc_;
     TuioOutput tuio_;

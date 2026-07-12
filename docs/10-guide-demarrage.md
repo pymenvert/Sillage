@@ -47,6 +47,20 @@ sillage-engine
 
 Le moteur apprend d'abord le fond (~1 s, salle vide) — bannière dans l'UI.
 
+## Capteurs supportés
+
+| Type | Protocole | Flag / config | Statut |
+|---|---|---|---|
+| Hokuyo URG/UST | SCIP 2.2, TCP 10940 | `--hokuyo host[@x,y,θ]` / `"type":"hokuyo"` | validé contre capteur simulé |
+| SICK TiM 5xx/7xx | CoLa A, TCP 2112 | `--sick host[@x,y,θ]` / `"type":"sick"` | validé contre capteur simulé |
+| **Pont UDP universel** | JSON/UDP | `--udp-sensor port[@x,y,θ]` / `"type":"udp"` | validé en réel |
+| RPLIDAR (série) | via le pont UDP | `tools/bridges/rplidar_bridge.py` | script fourni |
+
+Le **pont UDP** rend n'importe quel capteur compatible : un script envoie des datagrammes
+`{"a0":<rad>,"da":<rad>,"d":[mm,...]}` (un tour par datagramme) et Sillage le traite
+comme un capteur natif (santé, fusion, reconnexion). Exemple RPLIDAR complet dans
+[tools/bridges/](../tools/bridges/rplidar_bridge.py).
+
 ## Brancher un vrai LiDAR (Hokuyo URG/UST, Ethernet)
 
 ```bash

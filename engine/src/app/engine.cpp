@@ -45,8 +45,8 @@ std::vector<SensorPose> Engine::sensorLayout() const {
     if (config_.simEnabled) {
         layout = demoSensorLayout(config_.roomSize);
     }
-    for (const HokuyoSensorConfig& h : config_.hokuyos) {
-        layout.push_back(h.pose);
+    for (const SensorConfig& s : config_.sensors) {
+        layout.push_back(s.pose);
     }
     return layout;
 }
@@ -54,11 +54,7 @@ std::vector<SensorPose> Engine::sensorLayout() const {
 void EngineConfig::applyProject(const ProjectConfig& project) {
     roomSize = project.roomSize;
     simEnabled = project.simEnabled;
-    for (const SensorConfig& s : project.sensors) {
-        if (s.type == "hokuyo") {
-            hokuyos.push_back({s.host, s.port, s.pose});
-        }
-    }
+    sensors = project.sensors;
     zones = project.zones;
     oscEnabled = project.oscEnabled;
     oscHost = project.oscHost;
@@ -78,9 +74,7 @@ ProjectConfig EngineConfig::toProject() const {
     ProjectConfig project;
     project.roomSize = roomSize;
     project.simEnabled = simEnabled;
-    for (const auto& h : hokuyos) {
-        project.sensors.push_back({"hokuyo", h.host, h.port, h.pose});
-    }
+    project.sensors = sensors;
     project.zones = zones;
     project.oscEnabled = oscEnabled;
     project.oscHost = oscHost;
@@ -114,13 +108,35 @@ Engine::Engine(const EngineConfig& config)
         }
     }
     const auto simSensors = static_cast<SensorId>(config_.simEnabled ? 2 : 0);
-    for (size_t i = 0; i < config_.hokuyos.size(); ++i) {
-        HokuyoDriver::Config hc;
-        hc.host = config_.hokuyos[i].host;
-        hc.port = config_.hokuyos[i].port;
-        hc.sensorId = simSensors + static_cast<SensorId>(i);
-        hokuyos_.push_back(std::make_unique<HokuyoDriver>(std::move(hc)));
-        hokuyoSeqs_.push_back(0);
+    for (size_t i = 0; i < config_.sensors.size(); ++i) {
+        const SensorConfig& s = config_.sensors[i];
+        const SensorId id = simSensors + static_cast<SensorId>(i);
+        if (s.type == "hokuyo") {
+            HokuyoDriver::Config c;
+            c.host = s.host;
+            c.port = s.port;
+            c.sensorId = id;
+            drivers_.push_back(std::make_unique<HokuyoDriver>(std::move(c)));
+        } else if (s.type == "sick") {
+            SickDriver::Config c;
+            c.host = s.host;
+            c.port = s.port;
+            c.sensorId = id;
+            drivers_.push_back(std::make_unique<SickDriver>(std::move(c)));
+        } else if (s.type == "udp") {
+            UdpBridgeDriver::Config c;
+            if (!s.host.empty()) {
+                c.bindHost = s.host;
+            }
+            c.port = s.port;
+            c.sensorId = id;
+            drivers_.push_back(std::make_unique<UdpBridgeDriver>(std::move(c)));
+        } else {
+            std::fprintf(stderr, "warning: unknown sensor type '%s' ignored\n",
+                         s.type.c_str());
+            continue;
+        }
+        driverSeqs_.push_back(0);
     }
 }
 
@@ -170,12 +186,12 @@ bool Engine::run() {
         }
         std::printf("Record  : %s\n", config_.recordPath.string().c_str());
     }
-    for (auto& driver : hokuyos_) {
+    for (auto& driver : drivers_) {
         driver->start();
     }
     std::printf("OSC     : %s:%u (Augmenta legacy)\n", config_.oscHost.c_str(), config_.oscPort);
     std::printf("Sensors : %zu virtual, %zu hokuyo\n",
-                static_cast<size_t>(config_.simEnabled ? 2 : 0), hokuyos_.size());
+                static_cast<size_t>(config_.simEnabled ? 2 : 0), drivers_.size());
     std::printf("Tick    : %.0f Hz, learning background...\n",
                 static_cast<double>(config_.tickHz));
 
@@ -202,8 +218,8 @@ bool Engine::run() {
             if (simulator_) {
                 frames = simulator_->step(dt, tickStart);
             }
-            for (size_t i = 0; i < hokuyos_.size(); ++i) {
-                if (auto frame = hokuyos_[i]->latestFrame(hokuyoSeqs_[i])) {
+            for (size_t i = 0; i < drivers_.size(); ++i) {
+                if (auto frame = drivers_[i]->latestFrame(driverSeqs_[i])) {
                     frames.push_back(std::move(*frame));
                 }
             }
@@ -260,7 +276,7 @@ bool Engine::run() {
         nextTick += tickPeriod;
         std::this_thread::sleep_until(nextTick);
     }
-    for (auto& driver : hokuyos_) {
+    for (auto& driver : drivers_) {
         driver->stop();
     }
     server_.stop();
@@ -395,12 +411,13 @@ std::string Engine::statusJson() const {
         }
     }
     const auto simSensors = config_.simEnabled ? 2 : 0;
-    for (size_t i = 0; i < hokuyos_.size(); ++i) {
-        const SensorHealth h = hokuyos_[i]->health();
+    for (size_t i = 0; i < drivers_.size(); ++i) {
+        const SensorHealth h = drivers_[i]->health();
         std::snprintf(buf, sizeof(buf),
-                      "%s{\"id\":%zu,\"type\":\"hokuyo\",\"connected\":%s,\"fps\":%.1f,"
+                      "%s{\"id\":%zu,\"type\":\"%s\",\"connected\":%s,\"fps\":%.1f,"
                       "\"frames\":%llu,\"errors\":%llu}",
-                      first ? "" : ",", simSensors + i, h.connected ? "true" : "false",
+                      first ? "" : ",", simSensors + i, drivers_[i]->type(),
+                      h.connected ? "true" : "false",
                       static_cast<double>(h.scansPerSecond),
                       static_cast<unsigned long long>(h.framesReceived),
                       static_cast<unsigned long long>(h.decodeErrors));

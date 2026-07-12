@@ -27,7 +27,9 @@ void printUsage() {
                 "  --agents <n>         random walkers        (default 1, + 2 crossing)\n"
                 "  --seed <n>           simulator RNG seed    (default 42)\n"
                 "  --room <WxH>         room size in meters   (default 10x8)\n"
-                "  --hokuyo <host[:port][@x,y,theta]>  add a real Hokuyo sensor\n"
+                "  --hokuyo <host[:port][@x,y,theta]>  add a Hokuyo URG/UST (SCIP 2.2)\n"
+                "  --sick <host[:port][@x,y,theta]>    add a SICK TiM (CoLa A)\n"
+                "  --udp-sensor <port[@x,y,theta]>     add a UDP bridge sensor (any hardware)\n"
                 "  --no-sim             disable the demo simulator (real sensors only)\n"
                 "  --config <file>      load a project file (CLI flags override)\n"
                 "  --save-config <file> write the current config as a project file, exit\n"
@@ -107,27 +109,33 @@ int main(int argc, char** argv) {
                 std::fprintf(stderr, "invalid --room, expected WxH (e.g. 12x9)\n");
                 return 2;
             }
-        } else if (arg == "--hokuyo") {
-            // host[:port][@x,y,theta]
+        } else if (arg == "--hokuyo" || arg == "--sick" || arg == "--udp-sensor") {
+            // host[:port][@x,y,theta] — for --udp-sensor: port[@x,y,theta]
             std::string spec = next();
-            sillage::HokuyoSensorConfig h;
+            sillage::SensorConfig s;
+            s.type = arg == "--hokuyo" ? "hokuyo" : arg == "--sick" ? "sick" : "udp";
+            s.port = s.type == "hokuyo" ? 10940 : s.type == "sick" ? 2112 : 9911;
             const size_t at = spec.find('@');
             if (at != std::string::npos) {
                 float x = 0.0f, y = 0.0f, theta = 0.0f;
                 if (std::sscanf(spec.c_str() + at + 1, "%f,%f,%f", &x, &y, &theta) != 3) {
-                    std::fprintf(stderr, "invalid --hokuyo pose, expected @x,y,theta\n");
+                    std::fprintf(stderr, "invalid sensor pose, expected @x,y,theta\n");
                     return 2;
                 }
-                h.pose = {{x, y}, theta};
+                s.pose = {{x, y}, theta};
                 spec.resize(at);
             }
-            const size_t colon = spec.find(':');
-            if (colon != std::string::npos) {
-                h.port = static_cast<uint16_t>(std::atoi(spec.c_str() + colon + 1));
-                spec.resize(colon);
+            if (s.type == "udp") {
+                s.port = static_cast<uint16_t>(std::atoi(spec.c_str()));
+            } else {
+                const size_t colon = spec.find(':');
+                if (colon != std::string::npos) {
+                    s.port = static_cast<uint16_t>(std::atoi(spec.c_str() + colon + 1));
+                    spec.resize(colon);
+                }
+                s.host = spec;
             }
-            h.host = spec;
-            config.hokuyos.push_back(std::move(h));
+            config.sensors.push_back(std::move(s));
         } else if (arg == "--no-sim") {
             config.simEnabled = false;
         } else if (arg == "--ticks") {

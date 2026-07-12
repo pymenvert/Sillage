@@ -103,6 +103,50 @@ void UdpSender::close() {
     }
 }
 
+// --- UdpReceiver -------------------------------------------------------------
+
+bool UdpReceiver::bind(const std::string& bindHost, uint16_t port, int recvTimeoutMs) {
+    close();
+    initSockets();
+    sockaddr_in addr{};
+    if (!resolveIpv4(bindHost, port, addr)) {
+        return false;
+    }
+    const auto s = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+#ifdef _WIN32
+    if (s == INVALID_SOCKET) {
+        return false;
+    }
+#else
+    if (s < 0) {
+        return false;
+    }
+#endif
+    if (::bind(s, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) != 0) {
+        tcpClose(static_cast<SocketHandle>(s));
+        return false;
+    }
+    tcpSetRecvTimeout(static_cast<SocketHandle>(s), recvTimeoutMs);
+    socket_ = static_cast<SocketHandle>(s);
+    return true;
+}
+
+int UdpReceiver::receive(void* buffer, size_t size) {
+    if (socket_ == kInvalidSocket) {
+        return -1;
+    }
+    return static_cast<int>(
+        ::recvfrom(toNative(socket_), static_cast<char*>(buffer), static_cast<int>(size), 0,
+                   nullptr, nullptr));
+}
+
+void UdpReceiver::close() {
+    if (socket_ != kInvalidSocket) {
+        tcpClose(socket_);
+        socket_ = kInvalidSocket;
+    }
+}
+
 // --- TcpListener -------------------------------------------------------------
 
 TcpListener::~TcpListener() { close(); }

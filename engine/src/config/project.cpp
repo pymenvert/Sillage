@@ -109,7 +109,7 @@ std::optional<ProjectConfig> ProjectConfig::fromJson(const json::Value& v, std::
             sensor.pose.position = *pos;
         }
         sensor.pose.theta = static_cast<float>(s["theta"].asNumber());
-        if (sensor.host.empty()) {
+        if (sensor.host.empty() && sensor.type != "udp") { // udp binds locally
             error = "sensor without host";
             return std::nullopt;
         }
