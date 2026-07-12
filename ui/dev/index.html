@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sillage — live</title>
+<style>
+  :root {
+    --bg: #0a0e14;
+    --panel: #111721cc;
+    --line: #1e2733;
+    --text: #d6e2f0;
+    --dim: #5c6b7f;
+    --accent: #38e1ff;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.45 "Inter", system-ui, sans-serif;
+    overflow: hidden;
+  }
+  #scene { position: absolute; inset: 0; width: 100%; height: 100%; }
+  header {
+    position: absolute; top: 16px; left: 16px;
+    display: flex; align-items: baseline; gap: 12px;
+    padding: 10px 16px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    backdrop-filter: blur(8px);
+  }
+  header h1 { font-size: 15px; font-weight: 600; letter-spacing: 0.04em; }
+  header h1 span { color: var(--accent); }
+  #status { color: var(--dim); font-variant-numeric: tabular-nums; }
+  #status.live::before {
+    content: "●"; color: var(--accent); margin-right: 6px;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 50% { opacity: 0.35; } }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<header>
+  <h1>SILLAGE <span>M0</span></h1>
+  <div id="status">connexion…</div>
+</header>
+<script>
+"use strict";
+const canvas = document.getElementById("scene");
+const ctx = canvas.getContext("2d");
+const statusEl = document.getElementById("status");
+
+const sensorColors = ["#38e1ff", "#ffb347", "#7cffa0", "#ff7ce8"];
+const trackColors = ["#ffd166", "#06d6a0", "#ef476f", "#8ecae6", "#c77dff", "#f4a261"];
+
+let frame = null;
+const trails = new Map(); // id -> [{x,y}...]
+
+function resize() {
+  canvas.width = window.innerWidth * devicePixelRatio;
+  canvas.height = window.innerHeight * devicePixelRatio;
+}
+window.addEventListener("resize", resize);
+resize();
+
+function connect() {
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => { statusEl.textContent = "live"; statusEl.classList.add("live"); };
+  ws.onclose = () => {
+    statusEl.textContent = "reconnexion…"; statusEl.classList.remove("live");
+    setTimeout(connect, 1000);
+  };
+  ws.onmessage = (e) => {
+    frame = JSON.parse(e.data);
+    for (const t of frame.tracks) {
+      if (!trails.has(t.id)) trails.set(t.id, []);
+      const trail = trails.get(t.id);
+      trail.push({ x: t.x, y: t.y });
+      if (trail.length > 90) trail.shift();
+    }
+    const live = new Set(frame.tracks.map((t) => t.id));
+    for (const id of trails.keys()) if (!live.has(id)) trails.delete(id);
+  };
+}
+connect();
+
+function draw() {
+  requestAnimationFrame(draw);
+  const w = canvas.width, h = canvas.height;
+  ctx.fillStyle = "#0a0e14";
+  ctx.fillRect(0, 0, w, h);
+  if (!frame) return;
+
+  const [rw, rh] = frame.room;
+  const margin = 60 * devicePixelRatio;
+  const scale = Math.min((w - 2 * margin) / rw, (h - 2 * margin) / rh);
+  const ox = (w - rw * scale) / 2;
+  const oy = (h + rh * scale) / 2; // y-up: room (0,0) at bottom-left
+  const X = (x) => ox + x * scale;
+  const Y = (y) => oy - y * scale;
+
+  // Metric grid + room outline.
+  ctx.strokeStyle = "#131a24";
+  ctx.lineWidth = 1;
+  for (let gx = 0; gx <= rw; gx += 1) {
+    ctx.beginPath(); ctx.moveTo(X(gx), Y(0)); ctx.lineTo(X(gx), Y(rh)); ctx.stroke();
+  }
+  for (let gy = 0; gy <= rh; gy += 1) {
+    ctx.beginPath(); ctx.moveTo(X(0), Y(gy)); ctx.lineTo(X(rw), Y(gy)); ctx.stroke();
+  }
+  ctx.strokeStyle = "#2a3646";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(X(0), Y(rh), rw * scale, rh * scale);
+
+  // Foreground points, colored per sensor.
+  for (const [px, py, s] of frame.points) {
+    ctx.fillStyle = sensorColors[s % sensorColors.length];
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+    ctx.arc(X(px), Y(py), 1.6 * devicePixelRatio, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Trails (comet fade) + tracks.
+  for (const t of frame.tracks) {
+    const color = trackColors[t.id % trackColors.length];
+    const trail = trails.get(t.id) || [];
+    for (let i = 1; i < trail.length; i++) {
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = (i / trail.length) * 0.5;
+      ctx.lineWidth = 2 * devicePixelRatio * (i / trail.length);
+      ctx.beginPath();
+      ctx.moveTo(X(trail[i - 1].x), Y(trail[i - 1].y));
+      ctx.lineTo(X(trail[i].x), Y(trail[i].y));
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+
+    // Body circle (dashed while coasting) + velocity vector + ID label.
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2 * devicePixelRatio;
+    ctx.setLineDash(t.coast ? [4 * devicePixelRatio, 4 * devicePixelRatio] : []);
+    ctx.beginPath();
+    ctx.arc(X(t.x), Y(t.y), Math.max(t.r, 0.15) * scale, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.beginPath();
+    ctx.moveTo(X(t.x), Y(t.y));
+    ctx.lineTo(X(t.x + t.vx * 0.6), Y(t.y + t.vy * 0.6));
+    ctx.stroke();
+
+    ctx.fillStyle = color;
+    ctx.font = `${12 * devicePixelRatio}px "JetBrains Mono", monospace`;
+    ctx.fillText(`#${t.id}`, X(t.x) + 10 * devicePixelRatio, Y(t.y) - 10 * devicePixelRatio);
+  }
+
+  statusEl.textContent = frame ? `live — tick ${frame.tick} · ${frame.tracks.length} pers. · ${frame.points.length} pts` : "live";
+}
+draw();
+</script>
+</body>
+</html>
