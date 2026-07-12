@@ -160,6 +160,45 @@ void TcpListener::close() {
 
 // --- TCP helpers -------------------------------------------------------------
 
+SocketHandle tcpConnect(const std::string& host, uint16_t port, int timeoutMs) {
+    initSockets();
+    sockaddr_in addr{};
+    if (!resolveIpv4(host, port, addr)) {
+        return kInvalidSocket;
+    }
+    const auto s = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+#ifdef _WIN32
+    if (s == INVALID_SOCKET) {
+        return kInvalidSocket;
+    }
+#else
+    if (s < 0) {
+        return kInvalidSocket;
+    }
+#endif
+    // Blocking connect with OS default timeout is acceptable here: drivers
+    // run on their own thread and use recv timeouts once connected.
+    if (::connect(s, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) != 0) {
+        tcpClose(static_cast<SocketHandle>(s));
+        return kInvalidSocket;
+    }
+    tcpSetRecvTimeout(static_cast<SocketHandle>(s), timeoutMs);
+    return static_cast<SocketHandle>(s);
+}
+
+void tcpSetRecvTimeout(SocketHandle s, int milliseconds) {
+#ifdef _WIN32
+    const DWORD timeout = static_cast<DWORD>(milliseconds);
+    ::setsockopt(toNative(s), SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout),
+                 sizeof(timeout));
+#else
+    timeval tv{};
+    tv.tv_sec = milliseconds / 1000;
+    tv.tv_usec = (milliseconds % 1000) * 1000;
+    ::setsockopt(toNative(s), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+#endif
+}
+
 int tcpRecv(SocketHandle s, void* buffer, size_t size) {
     return static_cast<int>(
         ::recv(toNative(s), static_cast<char*>(buffer), static_cast<int>(size), 0));

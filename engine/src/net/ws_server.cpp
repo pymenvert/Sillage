@@ -285,6 +285,21 @@ void WsHttpServer::handleConnection(SocketHandle client) {
 }
 
 void WsHttpServer::serveHttp(SocketHandle client, const std::string& target) {
+    if (target.rfind("/api/", 0) == 0 && apiHandler_) {
+        const std::string body = apiHandler_(target);
+        if (!body.empty()) {
+            const std::string header =
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " +
+                std::to_string(body.size()) + "\r\nCache-Control: no-store\r\n\r\n";
+            tcpSendAll(client, header.data(), header.size());
+            tcpSendAll(client, body.data(), body.size());
+            return;
+        }
+        const std::string resp = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+        tcpSendAll(client, resp.data(), resp.size());
+        return;
+    }
+
     std::string path = target == "/" ? "/index.html" : target;
     // Reject path traversal outright.
     if (path.find("..") != std::string::npos) {

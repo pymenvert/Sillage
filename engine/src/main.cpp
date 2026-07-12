@@ -25,6 +25,9 @@ void printUsage() {
                 "  --osc-port <port>    OSC port              (default 12000)\n"
                 "  --agents <n>         random walkers        (default 1, + 2 crossing)\n"
                 "  --seed <n>           simulator RNG seed    (default 42)\n"
+                "  --room <WxH>         room size in meters   (default 10x8)\n"
+                "  --hokuyo <host[:port][@x,y,theta]>  add a real Hokuyo sensor\n"
+                "  --no-sim             disable the demo simulator (real sensors only)\n"
                 "  --ticks <n>          run n ticks, then exit (CI/smoke tests)\n"
                 "  --headless           no HTTP server\n"
                 "  --eval               run the MOT scenario library and exit\n");
@@ -33,8 +36,8 @@ void printUsage() {
 // Runs the full scenario library, prints a metrics table, returns the number
 // of failed scenarios (CI gate: exit code 0 = all green).
 int runEval() {
-    std::printf("%-20s %8s %8s %8s %7s %7s %5s %5s  %s\n", "scenario", "IDsw", "MOTA", "IDF1",
-                "miss", "FP", "ids", "maxT", "verdict");
+    std::printf("%-20s %8s %8s %8s %7s %7s %5s %5s %8s  %s\n", "scenario", "IDsw", "MOTA",
+                "IDF1", "miss", "FP", "ids", "maxT", "tick(us)", "verdict");
     int failed = 0;
     for (const sillage::Scenario& scenario : sillage::scenarioLibrary()) {
         const sillage::ScenarioOutcome outcome = sillage::runScenario(scenario);
@@ -42,9 +45,10 @@ int runEval() {
         const char* verdict = outcome.passed          ? "PASS"
                               : scenario.quarantined ? "QUARANTINE "
                                                       : "FAIL ";
-        std::printf("%-20s %8d %8.3f %8.3f %7d %7d %5d %5d  %s%s\n", scenario.name.c_str(),
+        std::printf("%-20s %8d %8.3f %8.3f %7d %7d %5d %5d %8.0f  %s%s\n", scenario.name.c_str(),
                     m.idSwitches, static_cast<double>(m.mota), static_cast<double>(m.idf1),
-                    m.misses, m.falsePositives, m.distinctIds, m.maxSimultaneous, verdict,
+                    m.misses, m.falsePositives, m.distinctIds, m.maxSimultaneous,
+                    static_cast<double>(outcome.avgTickUs), verdict,
                     outcome.passed ? "" : outcome.failureReason.c_str());
         if (!outcome.passed && !scenario.quarantined) {
             ++failed;
@@ -74,6 +78,37 @@ int main(int argc, char** argv) {
             config.randomAgents = static_cast<uint32_t>(std::atoi(next()));
         } else if (arg == "--seed") {
             config.seed = static_cast<uint32_t>(std::atoi(next()));
+        } else if (arg == "--room") {
+            float w = 0.0f, h = 0.0f;
+            if (std::sscanf(next(), "%fx%f", &w, &h) == 2 && w > 1.0f && h > 1.0f) {
+                config.roomSize = {w, h};
+            } else {
+                std::fprintf(stderr, "invalid --room, expected WxH (e.g. 12x9)\n");
+                return 2;
+            }
+        } else if (arg == "--hokuyo") {
+            // host[:port][@x,y,theta]
+            std::string spec = next();
+            sillage::HokuyoSensorConfig h;
+            const size_t at = spec.find('@');
+            if (at != std::string::npos) {
+                float x = 0.0f, y = 0.0f, theta = 0.0f;
+                if (std::sscanf(spec.c_str() + at + 1, "%f,%f,%f", &x, &y, &theta) != 3) {
+                    std::fprintf(stderr, "invalid --hokuyo pose, expected @x,y,theta\n");
+                    return 2;
+                }
+                h.pose = {{x, y}, theta};
+                spec.resize(at);
+            }
+            const size_t colon = spec.find(':');
+            if (colon != std::string::npos) {
+                h.port = static_cast<uint16_t>(std::atoi(spec.c_str() + colon + 1));
+                spec.resize(colon);
+            }
+            h.host = spec;
+            config.hokuyos.push_back(std::move(h));
+        } else if (arg == "--no-sim") {
+            config.simEnabled = false;
         } else if (arg == "--ticks") {
             config.maxTicks = static_cast<uint64_t>(std::atoll(next()));
         } else if (arg == "--headless") {

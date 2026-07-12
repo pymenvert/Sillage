@@ -1,5 +1,12 @@
 # 07 — Roadmap
 
+> **État au 2026-07-12** — **M0 : terminé.** **M1 : largement avancé** — tracker complet
+> (5/6 scénarios MOT parfaits, `group_8_random` en quarantaine : nœuds d'occultation en
+> foule dense vus de 2 capteurs), driver Hokuyo SCIP 2.2 écrit et validé contre capteur
+> simulé (validation matérielle en attente du premier capteur physique), driver RPLIDAR
+> non commencé (nécessite le matériel), UI live avec panneaux santé. Pipeline mesuré à
+> ~0,25 ms/tick (2 capteurs, 5 personnes) — budget < 10 ms très largement tenu.
+
 Principe : **squelette marchant d'abord** — dès M0, la chaîne complète capteur→sortie
 existe de bout en bout, et chaque jalon l'épaissit. On peut faire une démo à la fin de
 chaque jalon. Les durées supposent un développeur à temps plein assisté ; elles se lisent

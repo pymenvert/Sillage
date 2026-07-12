@@ -159,6 +159,8 @@ ScenarioOutcome runScenario(const Scenario& scenario, float tickHz, bool debugTr
     Pipeline pipeline(cfg);
 
     MotAccumulator mot;
+    double totalTickUs = 0.0;
+    float maxTickUs = 0.0f;
     const auto ticks = static_cast<uint64_t>(scenario.durationSeconds * tickHz);
     for (uint64_t tick = 0; tick < ticks; ++tick) {
         std::vector<ScanFrame> frames = sim.step(dt, TimePoint{});
@@ -168,7 +170,12 @@ ScenarioOutcome runScenario(const Scenario& scenario, float tickHz, bool debugTr
                 return f.sensor == scenario.droppedSensor;
             });
         }
+        const auto processStart = Clock::now();
         const FrameSnapshot snap = pipeline.process(frames, dt, tick, sim.roomSize());
+        const float tickUs =
+            std::chrono::duration<float, std::micro>(Clock::now() - processStart).count();
+        totalTickUs += tickUs;
+        maxTickUs = std::max(maxTickUs, tickUs);
         if (pipeline.learning()) {
             continue;
         }
@@ -281,6 +288,9 @@ ScenarioOutcome runScenario(const Scenario& scenario, float tickHz, bool debugTr
     outcome.scenario = scenario;
     outcome.metrics = mot.result();
     outcome.passed = true;
+    outcome.avgTickUs = ticks > 0 ? static_cast<float>(totalTickUs / static_cast<double>(ticks))
+                                  : 0.0f;
+    outcome.maxTickUs = maxTickUs;
 
     const MotResult& m = outcome.metrics;
     const ScenarioGates& g = scenario.gates;

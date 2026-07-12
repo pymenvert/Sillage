@@ -5,7 +5,14 @@
 > identifiants persistants, et diffuse leurs positions vers les logiciels créatifs
 > (TouchDesigner, Unity, Unreal, Madmapper, Resolume…).
 
-**Statut : phase de conception — voir la [roadmap](docs/07-roadmap.md).**
+**Statut : M0 terminé, M1 en cours** — le moteur tourne (simulateur + Hokuyo), le tracker
+tient 5/6 scénarios de robustesse à 0 échange d'ID, l'UI live fonctionne.
+Voir le [guide de démarrage](docs/10-guide-demarrage.md) et la [roadmap](docs/07-roadmap.md).
+
+```bash
+cmake --preset windows-msvc && cmake --build --preset windows-msvc
+build/windows-msvc/engine/Release/sillage-engine   # UI sur http://127.0.0.1:8080
+```
 
 ## Ce que fait Sillage
 
@@ -43,6 +50,7 @@
 | [07 — Roadmap](docs/07-roadmap.md) | Jalons M0→M6 avec critères d'acceptation |
 | [08 — Ingénierie](docs/08-ingenierie.md) | Stack, CI/CD, tests, conventions, packaging |
 | [09 — Outils de maintenance et debug](docs/09-outils-maintenance-debug.md) | Profilage, replay, diagnostic, injection de pannes |
+| [10 — Guide de démarrage](docs/10-guide-demarrage.md) | Compiler, lancer, brancher un LiDAR, outils d'évaluation |
 | [ADRs](docs/adr/) | Décisions d'architecture actées |
 
 ## Organisation du dépôt (cible)

@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <filesystem>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -26,6 +27,12 @@ public:
     bool start(const std::string& bindHost, uint16_t port, std::filesystem::path docRoot);
     void stop();
 
+    // Handler for GET /api/* — returns a JSON body, or empty string for 404.
+    // Must be set before start(); called from the accept thread.
+    void setApiHandler(std::function<std::string(const std::string&)> handler) {
+        apiHandler_ = std::move(handler);
+    }
+
     // Sends a text frame to all connected WebSocket clients. Clients that
     // cannot keep up (send timeout) are dropped — a slow tab must never be
     // able to stall the pipeline thread.
@@ -40,6 +47,7 @@ private:
 
     TcpListener listener_;
     std::filesystem::path docRoot_;
+    std::function<std::string(const std::string&)> apiHandler_;
     std::thread acceptThread_;
     std::atomic<bool> running_{false};
 

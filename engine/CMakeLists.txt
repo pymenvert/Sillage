@@ -6,6 +6,8 @@
 add_library(sillage_core STATIC
     src/core/background.cpp
     src/detect/clustering.cpp
+    src/drivers/hokuyo/hokuyo_driver.cpp
+    src/drivers/hokuyo/scip.cpp
     src/eval/metrics.cpp
     src/eval/scenarios.cpp
     src/io/augmenta_osc.cpp
@@ -54,6 +56,7 @@ if(BUILD_TESTING)
 
     add_executable(sillage_tests
         tests/clustering_test.cpp
+        tests/hokuyo_test.cpp
         tests/metrics_test.cpp
         tests/osc_test.cpp
         tests/scenarios_test.cpp

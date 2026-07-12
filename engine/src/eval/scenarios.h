@@ -42,6 +42,8 @@ struct ScenarioOutcome {
     MotResult metrics;
     bool passed = false;
     std::string failureReason;
+    float avgTickUs = 0.0f; // pipeline cost, microseconds per tick
+    float maxTickUs = 0.0f;
 };
 
 // Runs one scenario headless at full speed. Deterministic.

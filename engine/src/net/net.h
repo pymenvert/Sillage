@@ -52,8 +52,12 @@ private:
     SocketHandle socket_ = kInvalidSocket;
 };
 
+// Blocking TCP client connect; returns kInvalidSocket on failure.
+SocketHandle tcpConnect(const std::string& host, uint16_t port, int timeoutMs);
+
 // Blocking helpers on a connected TCP socket.
 int tcpRecv(SocketHandle s, void* buffer, size_t size);
+void tcpSetRecvTimeout(SocketHandle s, int milliseconds);
 bool tcpSendAll(SocketHandle s, const void* data, size_t size);
 void tcpClose(SocketHandle s);
 void tcpSetSendTimeout(SocketHandle s, int milliseconds);
