@@ -248,6 +248,28 @@ void WsHttpServer::handleConnection(SocketHandle client) {
     std::string method, target;
     firstLine >> method >> target;
 
+    // Read the request body if any (POST config payloads).
+    std::string body;
+    const std::string lengthHeader = headerValue(request, "Content-Length");
+    if (!lengthHeader.empty()) {
+        const auto contentLength = static_cast<size_t>(std::atoll(lengthHeader.c_str()));
+        if (contentLength > (1 << 20)) {
+            tcpClose(client); // nobody's project file is a megabyte
+            return;
+        }
+        const size_t headerEnd = request.find("\r\n\r\n") + 4;
+        body = request.substr(headerEnd);
+        while (body.size() < contentLength) {
+            const int n = tcpRecv(client, buf, sizeof(buf));
+            if (n <= 0) {
+                tcpClose(client);
+                return;
+            }
+            body.append(buf, static_cast<size_t>(n));
+        }
+        body.resize(contentLength);
+    }
+
     const std::string wsKey = headerValue(request, "Sec-WebSocket-Key");
     if (!wsKey.empty()) {
         const std::string response = "HTTP/1.1 101 Switching Protocols\r\n"
@@ -280,13 +302,14 @@ void WsHttpServer::handleConnection(SocketHandle client) {
         return;
     }
 
-    serveHttp(client, target);
+    serveHttp(client, method, target, body);
     tcpClose(client);
 }
 
-void WsHttpServer::serveHttp(SocketHandle client, const std::string& target) {
+void WsHttpServer::serveHttp(SocketHandle client, const std::string& method,
+                             const std::string& target, const std::string& requestBody) {
     if (target.rfind("/api/", 0) == 0 && apiHandler_) {
-        const std::string body = apiHandler_(target);
+        const std::string body = apiHandler_(method, target, requestBody);
         if (!body.empty()) {
             const std::string header =
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " +

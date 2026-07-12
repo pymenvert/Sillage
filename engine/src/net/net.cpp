@@ -63,6 +63,7 @@ void initSockets() {
 UdpSender::~UdpSender() { close(); }
 
 bool UdpSender::open(const std::string& host, uint16_t port) {
+    close(); // reopening with a new destination must not leak the old socket
     initSockets();
     sockaddr_in dest{};
     if (!resolveIpv4(host, port, dest)) {

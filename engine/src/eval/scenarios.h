@@ -17,6 +17,7 @@ struct ScenarioGates {
     float idf1Min = -1.0f;
     float motaMin = -1.0f;
     float falsePositiveRateMax = -1.0f; // fp / totalGt
+    float maxAvgTickUs = -1.0f;         // performance gate; -1 disables
 };
 
 struct Scenario {

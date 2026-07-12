@@ -53,9 +53,12 @@ struct EngineConfig {
     bool headless = false;            // no HTTP server (tests, benchmarks)
     std::optional<uint64_t> maxTicks; // run N ticks then stop (tests/CI)
 
+    std::filesystem::path projectPath; // where POST /api/config persists
+
     // Applies the persistent project file onto this config (CLI overrides win
-    // because they are parsed afterwards).
+    // because they are parsed afterwards); and the reverse mapping.
     void applyProject(const ProjectConfig& project);
+    ProjectConfig toProject() const;
 };
 
 // Live engine: sensors (simulator and/or Hokuyo drivers) -> Pipeline ->
@@ -72,6 +75,9 @@ private:
     std::vector<SensorPose> sensorLayout() const;
     std::string snapshotToJson(const FrameSnapshot& snap); // drains pending events
     std::string statusJson() const;
+    std::string handleApi(const std::string& method, const std::string& path,
+                          const std::string& body);
+    void applyPendingConfig(); // called at tick boundary only
 
     EngineConfig config_;
     std::unique_ptr<Simulator> simulator_; // null when simEnabled is false
@@ -89,6 +95,11 @@ private:
     ScanRecorder recorder_;
     ScanReplayer replayer_;
     std::atomic<bool> running_{false};
+
+    // Live project state: read by the API thread, swapped at tick boundaries.
+    std::mutex configMutex_;
+    ProjectConfig project_;
+    std::optional<ProjectConfig> pendingConfig_;
 
     // Load stats, published on /api/status and the WS health payload.
     mutable std::mutex statsMutex_;

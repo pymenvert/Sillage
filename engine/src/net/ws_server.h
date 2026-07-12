@@ -27,11 +27,12 @@ public:
     bool start(const std::string& bindHost, uint16_t port, std::filesystem::path docRoot);
     void stop();
 
-    // Handler for GET /api/* — returns a JSON body, or empty string for 404.
-    // Must be set before start(); called from the accept thread.
-    void setApiHandler(std::function<std::string(const std::string&)> handler) {
-        apiHandler_ = std::move(handler);
-    }
+    // Handler for /api/* requests: (method, path, body) -> JSON response, or
+    // empty string for 404. Must be set before start(); called from the
+    // accept thread — the handler is responsible for its own thread safety.
+    using ApiHandler =
+        std::function<std::string(const std::string&, const std::string&, const std::string&)>;
+    void setApiHandler(ApiHandler handler) { apiHandler_ = std::move(handler); }
 
     // Sends a text frame to all connected WebSocket clients. Clients that
     // cannot keep up (send timeout) are dropped — a slow tab must never be
@@ -43,11 +44,12 @@ public:
 private:
     void acceptLoop();
     void handleConnection(SocketHandle client);
-    void serveHttp(SocketHandle client, const std::string& target);
+    void serveHttp(SocketHandle client, const std::string& method, const std::string& target,
+                   const std::string& body);
 
     TcpListener listener_;
     std::filesystem::path docRoot_;
-    std::function<std::string(const std::string&)> apiHandler_;
+    ApiHandler apiHandler_;
     std::thread acceptThread_;
     std::atomic<bool> running_{false};
 

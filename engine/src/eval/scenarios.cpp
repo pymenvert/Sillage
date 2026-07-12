@@ -142,6 +142,32 @@ std::vector<Scenario> scenarioLibrary() {
         lib.push_back(s);
     }
 
+    // 7. Stress: 50 people in a 20x15 hall, 3 sensors. This gate is about the
+    //    engine (throughput, no blowup), not identity — MOT gates disabled,
+    //    the pipeline must stay far under the 60 Hz budget (16.6 ms).
+    {
+        Scenario s;
+        s.name = "stress_50";
+        s.sim.roomSize = {20.0f, 15.0f};
+        s.sim.seed = 3;
+        for (int i = 0; i < 50; ++i) {
+            const float x = 1.5f + static_cast<float>(i % 10) * 1.8f;
+            const float y = 1.5f + static_cast<float>(i / 10) * 2.6f;
+            s.sim.agents.push_back(
+                {{x, y}, {21.0f - x, 16.0f - y}, 0.7f + 0.05f * static_cast<float>(i % 8),
+                 Motion::Random, 1.5f});
+        }
+        s.sensors = {
+            {{0.15f, 0.15f}, 0.0f},
+            {{19.85f, 14.85f}, 3.14159265f},
+            {{0.15f, 14.85f}, -1.5707963f},
+        };
+        s.durationSeconds = 30.0f;
+        s.gates = {.idSwitchesMax = 1 << 20, .idf1Min = -1.0f, .motaMin = -1.0f,
+                   .falsePositiveRateMax = -1.0f, .maxAvgTickUs = 8000.0f};
+        lib.push_back(s);
+    }
+
     return lib;
 }
 
@@ -314,6 +340,10 @@ ScenarioOutcome runScenario(const Scenario& scenario, float tickHz, bool debugTr
             fail("FP rate " + std::to_string(fpRate) + " > " +
                  std::to_string(g.falsePositiveRateMax));
         }
+    }
+    if (g.maxAvgTickUs >= 0.0f && outcome.avgTickUs > g.maxAvgTickUs) {
+        fail("avg tick " + std::to_string(outcome.avgTickUs) + " us > " +
+             std::to_string(g.maxAvgTickUs));
     }
     return outcome;
 }

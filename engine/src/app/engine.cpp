@@ -74,6 +74,29 @@ void EngineConfig::applyProject(const ProjectConfig& project) {
     conditioning.smoothing = project.smoothing;
 }
 
+ProjectConfig EngineConfig::toProject() const {
+    ProjectConfig project;
+    project.roomSize = roomSize;
+    project.simEnabled = simEnabled;
+    for (const auto& h : hokuyos) {
+        project.sensors.push_back({"hokuyo", h.host, h.port, h.pose});
+    }
+    project.zones = zones;
+    project.oscEnabled = oscEnabled;
+    project.oscHost = oscHost;
+    project.oscPort = oscPort;
+    project.tuioEnabled = tuioEnabled;
+    project.tuioHost = tuioHost;
+    project.tuioPort = tuioPort;
+    project.admEnabled = admEnabled;
+    project.admHost = admHost;
+    project.admPort = admPort;
+    project.admMaxObjects = admMaxObjects;
+    project.predictionSeconds = conditioning.predictionSeconds;
+    project.smoothing = conditioning.smoothing;
+    return project;
+}
+
 Engine::Engine(const EngineConfig& config)
     : config_(config), pipeline_([&] {
           PipelineConfig cfg;
@@ -82,6 +105,7 @@ Engine::Engine(const EngineConfig& config)
           return cfg;
       }()),
       conditioner_(config.conditioning), zoneEngine_(config.zones) {
+    project_ = config.toProject();
     if (config_.simEnabled) {
         simulator_ = std::make_unique<Simulator>(
             demoSimParams(config_.roomSize, config_.randomAgents, config_.seed));
@@ -102,11 +126,9 @@ Engine::Engine(const EngineConfig& config)
 
 bool Engine::run() {
     if (!config_.headless) {
-        server_.setApiHandler([this](const std::string& path) -> std::string {
-            if (path == "/api/status") {
-                return statusJson();
-            }
-            return {};
+        server_.setApiHandler([this](const std::string& method, const std::string& path,
+                                     const std::string& body) {
+            return handleApi(method, path, body);
         });
         if (!server_.start(config_.httpBind, config_.httpPort, config_.uiRoot)) {
             std::fprintf(stderr, "error: cannot bind HTTP server on %s:%u\n",
@@ -166,6 +188,7 @@ bool Engine::run() {
     auto nextTick = Clock::now();
     while (running_) {
         const auto tickStart = Clock::now();
+        applyPendingConfig();
 
         std::vector<ScanFrame> frames;
         if (!config_.replayPath.empty()) {
@@ -242,6 +265,104 @@ bool Engine::run() {
     }
     server_.stop();
     return true;
+}
+
+std::string Engine::handleApi(const std::string& method, const std::string& path,
+                              const std::string& body) {
+    if (method == "GET" && path == "/api/status") {
+        return statusJson();
+    }
+    if (method == "GET" && path == "/api/config") {
+        std::lock_guard lock(configMutex_);
+        return project_.toJson().serialize(2);
+    }
+    if (method == "POST" && path == "/api/config") {
+        const auto parsed = json::parse(body);
+        if (!parsed.value) {
+            return "{\"ok\":false,\"error\":\"invalid JSON: " + parsed.error + "\"}";
+        }
+        std::string error;
+        auto incoming = ProjectConfig::fromJson(*parsed.value, error);
+        if (!incoming) {
+            return "{\"ok\":false,\"error\":\"" + error + "\"}";
+        }
+        std::lock_guard lock(configMutex_);
+        // Zones, outputs and conditioning hot-apply at the next tick; sensor
+        // and room geometry need a pipeline rebuild, i.e. a restart.
+        const bool restartRequired =
+            incoming->roomSize.x != project_.roomSize.x ||
+            incoming->roomSize.y != project_.roomSize.y ||
+            incoming->simEnabled != project_.simEnabled ||
+            incoming->sensors.size() != project_.sensors.size();
+        if (!config_.projectPath.empty()) {
+            std::string saveError;
+            if (!incoming->save(config_.projectPath, saveError)) {
+                return "{\"ok\":false,\"error\":\"" + saveError + "\"}";
+            }
+        }
+        pendingConfig_ = std::move(*incoming);
+        return std::string("{\"ok\":true,\"restartRequired\":") +
+               (restartRequired ? "true" : "false") +
+               ",\"persisted\":" + (config_.projectPath.empty() ? "false" : "true") + "}";
+    }
+    return {};
+}
+
+void Engine::applyPendingConfig() {
+    std::optional<ProjectConfig> pending;
+    {
+        std::lock_guard lock(configMutex_);
+        if (!pendingConfig_) {
+            return;
+        }
+        pending = std::move(pendingConfig_);
+        pendingConfig_.reset();
+    }
+    // Hot-appliable parts only; geometry changes wait for a restart.
+    zoneEngine_ = ZoneEngine(pending->zones);
+    pendingEvents_.clear();
+    conditioner_ = OutputConditioner(
+        {.predictionSeconds = pending->predictionSeconds, .smoothing = pending->smoothing});
+
+    if (pending->oscEnabled &&
+        (!config_.oscEnabled || pending->oscHost != config_.oscHost ||
+         pending->oscPort != config_.oscPort)) {
+        osc_.open(pending->oscHost, pending->oscPort);
+        eventOsc_.open(pending->oscHost, pending->oscPort);
+    }
+    if (pending->tuioEnabled &&
+        (!config_.tuioEnabled || pending->tuioHost != config_.tuioHost ||
+         pending->tuioPort != config_.tuioPort)) {
+        tuio_.open(pending->tuioHost, pending->tuioPort);
+    }
+    if (pending->admEnabled &&
+        (!config_.admEnabled || pending->admHost != config_.admHost ||
+         pending->admPort != config_.admPort)) {
+        adm_.open(pending->admHost, pending->admPort, pending->admMaxObjects);
+    }
+    config_.oscEnabled = pending->oscEnabled;
+    config_.oscHost = pending->oscHost;
+    config_.oscPort = pending->oscPort;
+    config_.tuioEnabled = pending->tuioEnabled;
+    config_.tuioHost = pending->tuioHost;
+    config_.tuioPort = pending->tuioPort;
+    config_.admEnabled = pending->admEnabled;
+    config_.admHost = pending->admHost;
+    config_.admPort = pending->admPort;
+    config_.admMaxObjects = pending->admMaxObjects;
+    config_.zones = pending->zones;
+    config_.conditioning.predictionSeconds = pending->predictionSeconds;
+    config_.conditioning.smoothing = pending->smoothing;
+
+    std::lock_guard lock(configMutex_);
+    // Runtime geometry stays as-is until restart; record the rest as truth.
+    const Vec2 room = project_.roomSize;
+    const bool sim = project_.simEnabled;
+    auto sensors = project_.sensors;
+    project_ = std::move(*pending);
+    project_.roomSize = room;
+    project_.simEnabled = sim;
+    project_.sensors = std::move(sensors);
 }
 
 std::string Engine::statusJson() const {

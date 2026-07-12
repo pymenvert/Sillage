@@ -80,6 +80,7 @@ int main(int argc, char** argv) {
                 return 2;
             }
             config.applyProject(*project);
+            config.projectPath = argv[i + 1]; // POST /api/config persists here
         }
     }
 
@@ -138,27 +139,8 @@ int main(int argc, char** argv) {
         } else if (arg == "--config") {
             next(); // handled in pass 1
         } else if (arg == "--save-config") {
-            sillage::ProjectConfig project;
-            project.roomSize = config.roomSize;
-            project.simEnabled = config.simEnabled;
-            for (const auto& h : config.hokuyos) {
-                project.sensors.push_back({"hokuyo", h.host, h.port, h.pose});
-            }
-            project.zones = config.zones;
-            project.oscEnabled = config.oscEnabled;
-            project.oscHost = config.oscHost;
-            project.oscPort = config.oscPort;
-            project.tuioEnabled = config.tuioEnabled;
-            project.tuioHost = config.tuioHost;
-            project.tuioPort = config.tuioPort;
-            project.admEnabled = config.admEnabled;
-            project.admHost = config.admHost;
-            project.admPort = config.admPort;
-            project.admMaxObjects = config.admMaxObjects;
-            project.predictionSeconds = config.conditioning.predictionSeconds;
-            project.smoothing = config.conditioning.smoothing;
             std::string error;
-            if (!project.save(next(), error)) {
+            if (!config.toProject().save(next(), error)) {
                 std::fprintf(stderr, "save failed: %s\n", error.c_str());
                 return 1;
             }

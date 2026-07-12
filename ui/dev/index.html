@@ -7,77 +7,97 @@
 <style>
   :root {
     --bg: #0a0e14;
-    --panel: rgba(17, 23, 33, 0.82);
+    --panel: rgba(17, 23, 33, 0.85);
     --line: #1e2733;
     --text: #d6e2f0;
     --dim: #5c6b7f;
     --accent: #38e1ff;
     --warn: #ffb347;
     --bad: #ff5d73;
+    --ok: #7cffa0;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { height: 100%; }
   body {
-    background: var(--bg);
-    color: var(--text);
+    background: var(--bg); color: var(--text);
     font: 13px/1.45 "Inter", system-ui, sans-serif;
-    overflow: hidden;
-    user-select: none;
+    overflow: hidden; user-select: none;
   }
   #scene { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
   #scene.dragging { cursor: grabbing; }
+  #scene.drawing { cursor: crosshair; }
 
   .glass {
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    backdrop-filter: blur(10px);
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; backdrop-filter: blur(10px);
   }
+  button, select, input {
+    font: inherit; color: var(--text);
+    background: #161e2a; border: 1px solid var(--line); border-radius: 7px;
+    padding: 5px 10px; outline: none;
+  }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.active { background: var(--accent); color: #06222b; font-weight: 600; }
+  input[type="checkbox"] { width: auto; accent-color: var(--accent); }
+  input[type="range"] { padding: 0; accent-color: var(--accent); }
 
   header {
     position: absolute; top: 14px; left: 14px; right: 14px;
-    display: flex; align-items: center; gap: 18px;
-    padding: 10px 16px;
-    z-index: 10;
+    display: flex; align-items: center; gap: 16px;
+    padding: 9px 16px; z-index: 10;
   }
   header h1 { font-size: 15px; font-weight: 700; letter-spacing: 0.06em; }
   header h1 span { color: var(--accent); font-weight: 400; }
-  .hstat { display: flex; align-items: baseline; gap: 6px; color: var(--dim); }
+  .hstat { display: flex; align-items: baseline; gap: 5px; color: var(--dim); }
   .hstat b { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
+  #spark { width: 110px; height: 26px; }
   #conn { margin-left: auto; color: var(--dim); }
   #conn.live { color: var(--accent); }
-  #conn.live::before {
-    content: "●"; margin-right: 6px;
-    animation: pulse 2s ease-in-out infinite;
-  }
+  #conn.live::before { content: "●"; margin-right: 6px; animation: pulse 2s ease-in-out infinite; }
   @keyframes pulse { 50% { opacity: 0.35; } }
 
-  aside {
-    position: absolute; top: 72px; right: 14px; width: 240px;
-    max-height: calc(100% - 100px);
-    display: flex; flex-direction: column; gap: 10px;
-    z-index: 10;
+  #toolbar {
+    position: absolute; top: 70px; left: 14px;
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 10px; z-index: 10;
   }
-  section { padding: 12px 14px; }
+  #toolbar .sep { height: 1px; background: var(--line); margin: 4px 0; }
+  #toolbar label { display: flex; gap: 7px; align-items: center; color: var(--dim); font-size: 12px; padding: 2px 4px; }
+
+  aside {
+    position: absolute; top: 70px; right: 14px; width: 250px;
+    max-height: calc(100% - 96px);
+    display: flex; flex-direction: column; gap: 10px;
+    z-index: 10; overflow-y: auto; scrollbar-width: none;
+  }
+  section { padding: 12px 14px; flex: none; }
   section h2 {
     font-size: 10px; font-weight: 600; letter-spacing: 0.14em;
-    text-transform: uppercase; color: var(--dim);
-    margin-bottom: 8px;
+    text-transform: uppercase; color: var(--dim); margin-bottom: 8px;
+    display: flex; justify-content: space-between; align-items: center;
   }
-  .row {
-    display: flex; align-items: center; gap: 8px;
-    padding: 4px 0; font-variant-numeric: tabular-nums;
-  }
+  .row { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-variant-numeric: tabular-nums; }
   .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
-  .row .grow { flex: 1; }
+  .row .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .row .dim { color: var(--dim); font-size: 12px; }
-  .ok { color: #7cffa0; } .bad { color: var(--bad); }
-  #tracklist { overflow-y: auto; max-height: 40vh; scrollbar-width: thin; }
-  #learn-banner {
-    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-    padding: 14px 26px; z-index: 5; color: var(--warn);
-    font-size: 14px; letter-spacing: 0.05em; display: none;
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  .zdel { color: var(--dim); background: none; border: none; padding: 0 4px; font-size: 14px; }
+  .zdel:hover { color: var(--bad); }
+
+  .field { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+  .field label { flex: 1; color: var(--dim); font-size: 12px; }
+  .field input[type="text"], .field input[type="number"] { width: 110px; padding: 4px 8px; font-size: 12px; }
+  .field input[type="number"].short { width: 62px; }
+
+  #learn-banner, #toast {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    padding: 12px 24px; z-index: 20; font-size: 13.5px; letter-spacing: 0.03em;
   }
+  #learn-banner { top: 50%; transform: translate(-50%, -50%); color: var(--warn); display: none; }
+  #toast { bottom: 20px; display: none; }
+  #toast.ok { color: var(--ok); } #toast.bad { color: var(--bad); }
+
   footer {
     position: absolute; bottom: 12px; left: 14px;
     padding: 6px 12px; color: var(--dim); font-size: 11px; z-index: 10;
@@ -92,17 +112,28 @@
   <div class="hstat"><span>personnes</span><b id="h-tracks">–</b></div>
   <div class="hstat"><span>tick</span><b id="h-tick">–</b><span>ms</span></div>
   <div class="hstat"><span>points</span><b id="h-points">–</b></div>
+  <canvas id="spark" width="220" height="52" title="temps de tick (2 s)"></canvas>
   <div id="conn">connexion…</div>
 </header>
 
+<div id="toolbar" class="glass">
+  <button id="mode-nav" class="active" title="molette zoom · glisser déplacer">Naviguer</button>
+  <button id="mode-zone" title="clic : sommets · double-clic : fermer · Échap : annuler">+ Zone</button>
+  <div class="sep"></div>
+  <label><input type="checkbox" id="ly-points" checked> points</label>
+  <label><input type="checkbox" id="ly-trails" checked> trajectoires</label>
+  <label><input type="checkbox" id="ly-zones" checked> zones</label>
+  <label><input type="checkbox" id="ly-heat"> heatmap</label>
+</div>
+
 <aside>
-  <section class="glass" id="sensors-panel">
+  <section class="glass">
     <h2>Capteurs</h2>
     <div id="sensorlist"><div class="row dim">en attente…</div></div>
   </section>
   <section class="glass">
     <h2>Personnes</h2>
-    <div id="tracklist"><div class="row dim">aucune</div></div>
+    <div id="tracklist" style="max-height:22vh;overflow-y:auto"><div class="row dim">aucune</div></div>
   </section>
   <section class="glass" id="zones-panel" style="display:none">
     <h2>Zones</h2>
@@ -112,10 +143,25 @@
     <h2>Événements</h2>
     <div id="eventlist"></div>
   </section>
+  <section class="glass">
+    <h2>Sorties</h2>
+    <div class="field"><label>OSC Augmenta</label><input type="checkbox" id="c-osc-on"></div>
+    <div class="field"><input type="text" id="c-osc-host"><input type="number" class="short" id="c-osc-port"></div>
+    <div class="field"><label>TUIO</label><input type="checkbox" id="c-tuio-on"></div>
+    <div class="field"><input type="text" id="c-tuio-host"><input type="number" class="short" id="c-tuio-port"></div>
+    <div class="field"><label>ADM-OSC (audio)</label><input type="checkbox" id="c-adm-on"></div>
+    <div class="field"><input type="text" id="c-adm-host"><input type="number" class="short" id="c-adm-port"></div>
+    <h2 style="margin-top:10px">Conditionnement</h2>
+    <div class="field"><label>prédiction <b id="c-pred-val">0</b> ms</label>
+      <input type="range" id="c-pred" min="0" max="200" step="10" style="width:110px"></div>
+    <div class="field"><label>lissage One-Euro</label><input type="checkbox" id="c-smooth"></div>
+    <button id="c-apply" style="width:100%;margin-top:8px">Appliquer</button>
+  </section>
 </aside>
 
 <div id="learn-banner" class="glass">Apprentissage du fond — salle vide…</div>
-<footer class="glass">molette : zoom · glisser : déplacer · double-clic : recadrer</footer>
+<div id="toast" class="glass"></div>
+<footer class="glass" id="hint">molette : zoom · glisser : déplacer · double-clic : recadrer</footer>
 
 <script>
 "use strict";
@@ -127,35 +173,52 @@ const sensorColors = ["#38e1ff", "#ffb347", "#7cffa0", "#ff7ce8", "#c77dff", "#8
 const trackColors = ["#ffd166", "#06d6a0", "#ef476f", "#8ecae6", "#c77dff", "#f4a261",
                      "#90e0ef", "#ffafcc"];
 
-let frame = null;
-let status = null;
+let frame = null, status = null, cfg = null;
 const trails = new Map();
 const eventLog = [];
+const tickHistory = [];
+let mode = "nav";           // "nav" | "zone"
+let drawingZone = [];       // room-frame vertices being drawn
+let mouseRoom = null;       // cursor in room coords
+const T = { scale: 1, ox: 0, oy: 0 }; // screen transform (set by draw)
 
-// --- View transform (pan / zoom) ---------------------------------------------
+// --- View ------------------------------------------------------------------------
 const view = { zoom: 1, panX: 0, panY: 0, fitted: false };
-function fitView() {
-  if (!frame) return;
-  view.zoom = 1; view.panX = 0; view.panY = 0; view.fitted = true;
+function fitView() { view.zoom = 1; view.panX = 0; view.panY = 0; view.fitted = true; }
+function toRoom(clientX, clientY) {
+  const px = clientX * devicePixelRatio, py = clientY * devicePixelRatio;
+  return { x: (px - T.ox) / T.scale, y: (T.oy - py) / T.scale };
 }
 canvas.addEventListener("wheel", (e) => {
   e.preventDefault();
-  const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-  view.zoom = Math.min(8, Math.max(0.3, view.zoom * factor));
+  view.zoom = Math.min(8, Math.max(0.3, view.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1)));
 }, { passive: false });
 let drag = null;
 canvas.addEventListener("mousedown", (e) => {
+  if (mode !== "nav") return;
   drag = { x: e.clientX, y: e.clientY };
   canvas.classList.add("dragging");
 });
 window.addEventListener("mouseup", () => { drag = null; canvas.classList.remove("dragging"); });
 window.addEventListener("mousemove", (e) => {
+  mouseRoom = toRoom(e.clientX, e.clientY);
   if (!drag) return;
   view.panX += (e.clientX - drag.x) * devicePixelRatio;
   view.panY += (e.clientY - drag.y) * devicePixelRatio;
   drag = { x: e.clientX, y: e.clientY };
 });
-canvas.addEventListener("dblclick", fitView);
+canvas.addEventListener("dblclick", (e) => {
+  if (mode === "zone") { finishZone(); e.preventDefault(); }
+  else fitView();
+});
+canvas.addEventListener("click", (e) => {
+  if (mode !== "zone") return;
+  const p = toRoom(e.clientX, e.clientY);
+  drawingZone.push([Math.round(p.x * 100) / 100, Math.round(p.y * 100) / 100]);
+});
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && mode === "zone") setMode("nav");
+});
 
 function resize() {
   canvas.width = window.innerWidth * devicePixelRatio;
@@ -164,10 +227,90 @@ function resize() {
 window.addEventListener("resize", resize);
 resize();
 
-// --- Data feeds ----------------------------------------------------------------
+// --- Modes & zone editing -----------------------------------------------------------
+function setMode(m) {
+  mode = m;
+  drawingZone = [];
+  el("mode-nav").classList.toggle("active", m === "nav");
+  el("mode-zone").classList.toggle("active", m === "zone");
+  canvas.classList.toggle("drawing", m === "zone");
+  el("hint").textContent = m === "zone"
+    ? "clic : ajouter un sommet · double-clic : fermer la zone · Échap : annuler"
+    : "molette : zoom · glisser : déplacer · double-clic : recadrer";
+}
+el("mode-nav").onclick = () => setMode("nav");
+el("mode-zone").onclick = () => setMode("zone");
+
+async function finishZone() {
+  if (drawingZone.length < 3) { toast("3 sommets minimum", false); return; }
+  const name = prompt("Nom de la zone :", "zone-" + ((cfg?.zones?.length || 0) + 1));
+  if (!name) { setMode("nav"); return; }
+  cfg.zones = cfg.zones || [];
+  cfg.zones.push({ name, polygon: drawingZone });
+  await pushConfig();
+  setMode("nav");
+}
+async function deleteZone(name) {
+  cfg.zones = (cfg.zones || []).filter((z) => z.name !== name);
+  await pushConfig();
+}
+
+// --- Config API -----------------------------------------------------------------------
+async function loadConfig() {
+  try {
+    cfg = await (await fetch("/api/config")).json();
+    el("c-osc-on").checked = cfg.outputs.augmentaOsc.enabled;
+    el("c-osc-host").value = cfg.outputs.augmentaOsc.host;
+    el("c-osc-port").value = cfg.outputs.augmentaOsc.port;
+    el("c-tuio-on").checked = cfg.outputs.tuio.enabled;
+    el("c-tuio-host").value = cfg.outputs.tuio.host;
+    el("c-tuio-port").value = cfg.outputs.tuio.port;
+    el("c-adm-on").checked = cfg.outputs.admOsc.enabled;
+    el("c-adm-host").value = cfg.outputs.admOsc.host;
+    el("c-adm-port").value = cfg.outputs.admOsc.port;
+    const predMs = Math.round((cfg.conditioning.predictionSeconds || 0) * 1000);
+    el("c-pred").value = predMs;
+    el("c-pred-val").textContent = predMs;
+    el("c-smooth").checked = !!cfg.conditioning.smoothing;
+  } catch { /* engine restarting */ }
+}
+el("c-pred").oninput = () => { el("c-pred-val").textContent = el("c-pred").value; };
+el("c-apply").onclick = async () => {
+  cfg.outputs.augmentaOsc.enabled = el("c-osc-on").checked;
+  cfg.outputs.augmentaOsc.host = el("c-osc-host").value;
+  cfg.outputs.augmentaOsc.port = +el("c-osc-port").value;
+  cfg.outputs.tuio.enabled = el("c-tuio-on").checked;
+  cfg.outputs.tuio.host = el("c-tuio-host").value;
+  cfg.outputs.tuio.port = +el("c-tuio-port").value;
+  cfg.outputs.admOsc.enabled = el("c-adm-on").checked;
+  cfg.outputs.admOsc.host = el("c-adm-host").value;
+  cfg.outputs.admOsc.port = +el("c-adm-port").value;
+  cfg.conditioning.predictionSeconds = +el("c-pred").value / 1000;
+  cfg.conditioning.smoothing = el("c-smooth").checked;
+  await pushConfig();
+};
+async function pushConfig() {
+  try {
+    const r = await (await fetch("/api/config", { method: "POST", body: JSON.stringify(cfg) })).json();
+    if (r.ok) {
+      toast(r.restartRequired ? "Appliqué — redémarrage requis pour la géométrie"
+            : (r.persisted ? "Appliqué et enregistré" : "Appliqué (non persisté : lancez avec --config)"), true);
+    } else toast("Erreur : " + r.error, false);
+  } catch { toast("Moteur injoignable", false); }
+}
+function toast(msg, ok) {
+  const t = el("toast");
+  t.textContent = msg;
+  t.className = "glass " + (ok ? "ok" : "bad");
+  t.style.display = "block";
+  clearTimeout(t._h);
+  t._h = setTimeout(() => { t.style.display = "none"; }, 3000);
+}
+
+// --- Data feeds -------------------------------------------------------------------------
 function connect() {
   const ws = new WebSocket(`ws://${location.host}/ws`);
-  ws.onopen = () => { el("conn").textContent = "live"; el("conn").classList.add("live"); };
+  ws.onopen = () => { el("conn").textContent = "live"; el("conn").classList.add("live"); loadConfig(); };
   ws.onclose = () => {
     el("conn").textContent = "reconnexion…"; el("conn").classList.remove("live");
     setTimeout(connect, 1000);
@@ -175,6 +318,10 @@ function connect() {
   ws.onmessage = (e) => {
     frame = JSON.parse(e.data);
     if (!view.fitted) fitView();
+    if (frame.health) {
+      tickHistory.push(frame.health.tickMs);
+      if (tickHistory.length > 60) tickHistory.shift();
+    }
     for (const t of frame.tracks) {
       if (!trails.has(t.id)) trails.set(t.id, []);
       const trail = trails.get(t.id);
@@ -183,21 +330,37 @@ function connect() {
     }
     const live = new Set(frame.tracks.map((t) => t.id));
     for (const id of trails.keys()) if (!live.has(id)) trails.delete(id);
+    stampHeatmap();
     updatePanels();
   };
 }
 connect();
-
 async function pollStatus() {
   try {
     const r = await fetch("/api/status");
     if (r.ok) { status = await r.json(); updateSensors(); }
-  } catch { /* engine restarting */ }
+  } catch { /* retry */ }
   setTimeout(pollStatus, 2000);
 }
 pollStatus();
 
-// --- Panels ---------------------------------------------------------------------
+// --- Heatmap (client-side accumulation) ---------------------------------------------------
+const heat = document.createElement("canvas");
+let heatCtx = null;
+function stampHeatmap() {
+  if (!frame || !el("ly-heat").checked) return;
+  const [rw, rh] = frame.room;
+  if (heat.width !== rw * 20) { heat.width = rw * 20; heat.height = rh * 20; heatCtx = heat.getContext("2d"); }
+  for (const t of frame.tracks) {
+    const g = heatCtx.createRadialGradient(t.x * 20, (rh - t.y) * 20, 2, t.x * 20, (rh - t.y) * 20, 9);
+    g.addColorStop(0, "rgba(56,225,255,0.045)");
+    g.addColorStop(1, "rgba(56,225,255,0)");
+    heatCtx.fillStyle = g;
+    heatCtx.fillRect(t.x * 20 - 9, (rh - t.y) * 20 - 9, 18, 18);
+  }
+}
+
+// --- Panels ---------------------------------------------------------------------------------
 function updatePanels() {
   if (!frame) return;
   el("h-tracks").textContent = frame.tracks.length;
@@ -206,49 +369,61 @@ function updatePanels() {
     el("h-tick").textContent = frame.health.tickMs.toFixed(1);
     el("learn-banner").style.display = frame.health.learning ? "block" : "none";
   }
+  drawSpark();
   if (frame.zones && frame.zones.length > 0) {
     el("zones-panel").style.display = "block";
     el("zonelist").innerHTML = frame.zones.map((z) =>
-      `<div class="row"><span class="grow">${z.name}</span>` +
-      `<b>${z.occ}</b><span class="dim">· ${z.entries} entrées</span></div>`
+      `<div class="row"><span class="grow">${z.name}</span><b>${z.occ}</b>` +
+      `<span class="dim">· ${z.entries}</span>` +
+      `<button class="zdel" data-z="${z.name}" title="supprimer">×</button></div>`
     ).join("");
-  }
+    for (const b of el("zonelist").querySelectorAll(".zdel")) {
+      b.onclick = () => deleteZone(b.dataset.z);
+    }
+  } else el("zones-panel").style.display = "none";
   if (frame.events && frame.events.length > 0) {
     el("events-panel").style.display = "block";
     for (const ev of frame.events) {
       eventLog.unshift(`#${ev.id} ${ev.type === "enter" ? "→" : "←"} ${ev.zone}`);
     }
     eventLog.length = Math.min(eventLog.length, 6);
-    el("eventlist").innerHTML =
-      eventLog.map((e) => `<div class="row dim">${e}</div>`).join("");
+    el("eventlist").innerHTML = eventLog.map((e) => `<div class="row dim">${e}</div>`).join("");
   }
   const list = el("tracklist");
-  if (frame.tracks.length === 0) {
-    list.innerHTML = '<div class="row dim">aucune</div>';
-    return;
-  }
-  list.innerHTML = frame.tracks.map((t) => {
-    const c = trackColors[t.id % trackColors.length];
-    const speed = Math.hypot(t.vx, t.vy).toFixed(2);
-    const state = t.coast ? '<span class="dim">occulté</span>' : `${speed} m/s`;
-    return `<div class="row"><span class="swatch" style="background:${c}"></span>` +
-           `<span class="grow">#${t.id}</span><span class="dim">${state}</span></div>`;
-  }).join("");
+  list.innerHTML = frame.tracks.length === 0 ? '<div class="row dim">aucune</div>'
+    : frame.tracks.map((t) => {
+        const c = trackColors[t.id % trackColors.length];
+        const state = t.coast ? '<span class="dim">occulté</span>'
+                              : `${Math.hypot(t.vx, t.vy).toFixed(2)} m/s`;
+        return `<div class="row"><span class="swatch" style="background:${c}"></span>` +
+               `<span class="grow">#${t.id}</span><span class="dim">${state}</span></div>`;
+      }).join("");
 }
-
 function updateSensors() {
   if (!status) return;
   el("sensorlist").innerHTML = status.sensors.map((s) => {
     const c = sensorColors[s.id % sensorColors.length];
-    const state = s.connected
-      ? `<span class="ok">${s.fps.toFixed(0)} Hz</span>`
-      : '<span class="bad">déconnecté</span>';
+    const state = s.connected ? `<span class="ok">${s.fps.toFixed(0)} Hz</span>`
+                              : '<span class="bad">déconnecté</span>';
     return `<div class="row"><span class="swatch" style="background:${c}"></span>` +
            `<span class="grow">${s.type} ${s.id}</span>${state}</div>`;
   }).join("");
 }
+function drawSpark() {
+  const c = el("spark"), g = c.getContext("2d");
+  g.clearRect(0, 0, c.width, c.height);
+  if (tickHistory.length < 2) return;
+  const max = Math.max(1, ...tickHistory);
+  g.strokeStyle = "#38e1ff"; g.lineWidth = 2; g.beginPath();
+  tickHistory.forEach((v, i) => {
+    const x = (i / (tickHistory.length - 1)) * c.width;
+    const y = c.height - 4 - (v / max) * (c.height - 8);
+    i ? g.lineTo(x, y) : g.moveTo(x, y);
+  });
+  g.stroke();
+}
 
-// --- Scene rendering --------------------------------------------------------------
+// --- Scene rendering ---------------------------------------------------------------------------
 function draw() {
   requestAnimationFrame(draw);
   const w = canvas.width, h = canvas.height;
@@ -258,99 +433,105 @@ function draw() {
 
   const [rw, rh] = frame.room;
   const margin = 70 * devicePixelRatio;
-  const scale = Math.min((w - 2 * margin) / rw, (h - 2 * margin) / rh) * view.zoom;
-  const ox = (w - rw * scale) / 2 + view.panX;
-  const oy = (h + rh * scale) / 2 + view.panY;
-  const X = (x) => ox + x * scale;
-  const Y = (y) => oy - y * scale;
+  T.scale = Math.min((w - 2 * margin) / rw, (h - 2 * margin) / rh) * view.zoom;
+  T.ox = (w - rw * T.scale) / 2 + view.panX;
+  T.oy = (h + rh * T.scale) / 2 + view.panY;
+  const X = (x) => T.ox + x * T.scale;
+  const Y = (y) => T.oy - y * T.scale;
 
-  // Metric grid + room outline.
-  ctx.strokeStyle = "#131a24";
-  ctx.lineWidth = 1;
-  for (let gx = 0; gx <= rw; gx += 1) {
-    ctx.beginPath(); ctx.moveTo(X(gx), Y(0)); ctx.lineTo(X(gx), Y(rh)); ctx.stroke();
-  }
-  for (let gy = 0; gy <= rh; gy += 1) {
-    ctx.beginPath(); ctx.moveTo(X(0), Y(gy)); ctx.lineTo(X(rw), Y(gy)); ctx.stroke();
-  }
-  ctx.strokeStyle = "#2a3646";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(X(0), Y(rh), rw * scale, rh * scale);
+  // Grid + room.
+  ctx.strokeStyle = "#131a24"; ctx.lineWidth = 1;
+  for (let gx = 0; gx <= rw; gx += 1) { ctx.beginPath(); ctx.moveTo(X(gx), Y(0)); ctx.lineTo(X(gx), Y(rh)); ctx.stroke(); }
+  for (let gy = 0; gy <= rh; gy += 1) { ctx.beginPath(); ctx.moveTo(X(0), Y(gy)); ctx.lineTo(X(rw), Y(gy)); ctx.stroke(); }
+  ctx.strokeStyle = "#2a3646"; ctx.lineWidth = 2;
+  ctx.strokeRect(X(0), Y(rh), rw * T.scale, rh * T.scale);
 
-  // Zones: translucent polygons with name + occupancy.
-  for (const z of frame.zones || []) {
-    if (z.poly.length < 3) continue;
+  // Heatmap layer.
+  if (el("ly-heat").checked && heatCtx) {
+    ctx.globalAlpha = 0.9;
+    ctx.drawImage(heat, X(0), Y(rh), rw * T.scale, rh * T.scale);
+    ctx.globalAlpha = 1;
+  }
+
+  // Zones.
+  if (el("ly-zones").checked) {
+    for (const z of frame.zones || []) {
+      if (z.poly.length < 3) continue;
+      ctx.beginPath();
+      ctx.moveTo(X(z.poly[0][0]), Y(z.poly[0][1]));
+      for (let i = 1; i < z.poly.length; i++) ctx.lineTo(X(z.poly[i][0]), Y(z.poly[i][1]));
+      ctx.closePath();
+      ctx.fillStyle = z.occ > 0 ? "rgba(56,225,255,0.10)" : "rgba(92,107,127,0.07)";
+      ctx.fill();
+      ctx.strokeStyle = z.occ > 0 ? "rgba(56,225,255,0.5)" : "rgba(92,107,127,0.4)";
+      ctx.lineWidth = 1.5 * devicePixelRatio;
+      ctx.setLineDash([6 * devicePixelRatio, 4 * devicePixelRatio]);
+      ctx.stroke(); ctx.setLineDash([]);
+      let cx = 0, cy = 0;
+      for (const [px, py] of z.poly) { cx += px; cy += py; }
+      ctx.fillStyle = z.occ > 0 ? "#38e1ff" : "#5c6b7f";
+      ctx.font = `${11 * devicePixelRatio}px "Inter", sans-serif`;
+      ctx.fillText(`${z.name} · ${z.occ}`, X(cx / z.poly.length), Y(cy / z.poly.length));
+    }
+  }
+
+  // Zone being drawn.
+  if (mode === "zone" && drawingZone.length > 0) {
+    ctx.strokeStyle = "#ffd166"; ctx.lineWidth = 2 * devicePixelRatio;
     ctx.beginPath();
-    ctx.moveTo(X(z.poly[0][0]), Y(z.poly[0][1]));
-    for (let i = 1; i < z.poly.length; i++) ctx.lineTo(X(z.poly[i][0]), Y(z.poly[i][1]));
-    ctx.closePath();
-    ctx.fillStyle = z.occ > 0 ? "rgba(56,225,255,0.10)" : "rgba(92,107,127,0.07)";
-    ctx.fill();
-    ctx.strokeStyle = z.occ > 0 ? "rgba(56,225,255,0.5)" : "rgba(92,107,127,0.4)";
-    ctx.lineWidth = 1.5 * devicePixelRatio;
-    ctx.setLineDash([6 * devicePixelRatio, 4 * devicePixelRatio]);
+    ctx.moveTo(X(drawingZone[0][0]), Y(drawingZone[0][1]));
+    for (let i = 1; i < drawingZone.length; i++) ctx.lineTo(X(drawingZone[i][0]), Y(drawingZone[i][1]));
+    if (mouseRoom) ctx.lineTo(X(mouseRoom.x), Y(mouseRoom.y));
     ctx.stroke();
-    ctx.setLineDash([]);
-    let cx = 0, cy = 0;
-    for (const [px, py] of z.poly) { cx += px; cy += py; }
-    ctx.fillStyle = z.occ > 0 ? "#38e1ff" : "#5c6b7f";
-    ctx.font = `${11 * devicePixelRatio}px "Inter", sans-serif`;
-    ctx.fillText(`${z.name} · ${z.occ}`, X(cx / z.poly.length), Y(cy / z.poly.length));
+    for (const [vx, vy] of drawingZone) {
+      ctx.fillStyle = "#ffd166";
+      ctx.beginPath(); ctx.arc(X(vx), Y(vy), 3.5 * devicePixelRatio, 0, Math.PI * 2); ctx.fill();
+    }
   }
 
-  // Sensors: position + heading tick.
+  // Sensors.
   (frame.sensors || []).forEach(([sx, sy, st], i) => {
     const c = sensorColors[i % sensorColors.length];
     ctx.fillStyle = c;
-    ctx.beginPath();
-    ctx.arc(X(sx), Y(sy), 5 * devicePixelRatio, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = c;
-    ctx.lineWidth = 2 * devicePixelRatio;
-    ctx.beginPath();
-    ctx.moveTo(X(sx), Y(sy));
-    ctx.lineTo(X(sx + 0.5 * Math.cos(st)), Y(sy + 0.5 * Math.sin(st)));
-    ctx.stroke();
+    ctx.beginPath(); ctx.arc(X(sx), Y(sy), 5 * devicePixelRatio, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = c; ctx.lineWidth = 2 * devicePixelRatio;
+    ctx.beginPath(); ctx.moveTo(X(sx), Y(sy));
+    ctx.lineTo(X(sx + 0.5 * Math.cos(st)), Y(sy + 0.5 * Math.sin(st))); ctx.stroke();
   });
 
-  // Foreground points, colored per sensor.
-  for (const [px, py, s] of frame.points) {
-    ctx.fillStyle = sensorColors[s % sensorColors.length];
-    ctx.globalAlpha = 0.8;
-    ctx.beginPath();
-    ctx.arc(X(px), Y(py), 1.6 * devicePixelRatio, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-
-  // Trails (comet fade) + tracks.
-  for (const t of frame.tracks) {
-    const color = trackColors[t.id % trackColors.length];
-    const trail = trails.get(t.id) || [];
-    for (let i = 1; i < trail.length; i++) {
-      ctx.strokeStyle = color;
-      ctx.globalAlpha = (i / trail.length) * 0.5;
-      ctx.lineWidth = 2 * devicePixelRatio * (i / trail.length);
-      ctx.beginPath();
-      ctx.moveTo(X(trail[i - 1].x), Y(trail[i - 1].y));
-      ctx.lineTo(X(trail[i].x), Y(trail[i].y));
-      ctx.stroke();
+  // Points.
+  if (el("ly-points").checked) {
+    for (const [px, py, s] of frame.points) {
+      ctx.fillStyle = sensorColors[s % sensorColors.length];
+      ctx.globalAlpha = 0.8;
+      ctx.beginPath(); ctx.arc(X(px), Y(py), 1.6 * devicePixelRatio, 0, Math.PI * 2); ctx.fill();
     }
     ctx.globalAlpha = 1;
+  }
 
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2 * devicePixelRatio;
+  // Trails + tracks.
+  for (const t of frame.tracks) {
+    const color = trackColors[t.id % trackColors.length];
+    if (el("ly-trails").checked) {
+      const trail = trails.get(t.id) || [];
+      for (let i = 1; i < trail.length; i++) {
+        ctx.strokeStyle = color;
+        ctx.globalAlpha = (i / trail.length) * 0.5;
+        ctx.lineWidth = 2 * devicePixelRatio * (i / trail.length);
+        ctx.beginPath();
+        ctx.moveTo(X(trail[i - 1].x), Y(trail[i - 1].y));
+        ctx.lineTo(X(trail[i].x), Y(trail[i].y));
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+    ctx.strokeStyle = color; ctx.lineWidth = 2 * devicePixelRatio;
     ctx.setLineDash(t.coast ? [4 * devicePixelRatio, 4 * devicePixelRatio] : []);
     ctx.beginPath();
-    ctx.arc(X(t.x), Y(t.y), Math.max(t.r, 0.15) * scale, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    ctx.beginPath();
-    ctx.moveTo(X(t.x), Y(t.y));
-    ctx.lineTo(X(t.x + t.vx * 0.6), Y(t.y + t.vy * 0.6));
-    ctx.stroke();
-
+    ctx.arc(X(t.x), Y(t.y), Math.max(t.r, 0.15) * T.scale, 0, Math.PI * 2);
+    ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(X(t.x), Y(t.y));
+    ctx.lineTo(X(t.x + t.vx * 0.6), Y(t.y + t.vy * 0.6)); ctx.stroke();
     ctx.fillStyle = color;
     ctx.font = `${12 * devicePixelRatio}px "JetBrains Mono", monospace`;
     ctx.fillText(`#${t.id}`, X(t.x) + 10 * devicePixelRatio, Y(t.y) - 10 * devicePixelRatio);
