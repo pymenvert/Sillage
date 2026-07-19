@@ -27,4 +27,9 @@ private:
 // Wraps encoded messages into an OSC bundle with immediate timetag.
 std::vector<uint8_t> encodeBundle(const std::vector<std::vector<uint8_t>>& messages);
 
+// Makes a string safe to splice into an OSC address: the OSC 1.0 grammar
+// forbids space and the characters # * , / ? [ ] { } (and control chars).
+// Forbidden characters become '_'; an empty result becomes "_".
+std::string sanitizeAddressPart(const std::string& part);
+
 } // namespace sillage::osc

@@ -43,6 +43,20 @@ TEST(Osc, FloatOneEncodesAsIeee754BigEndian) {
     EXPECT_EQ(bytes[11], 0x00);
 }
 
+TEST(Osc, SanitizeAddressPartStripsForbiddenChars) {
+    // OSC 1.0 forbids space and # * , / ? [ ] { } inside an address.
+    EXPECT_EQ(sanitizeAddressPart("main hall"), "main_hall");
+    EXPECT_EQ(sanitizeAddressPart("a/b*c?"), "a_b_c_");
+    EXPECT_EQ(sanitizeAddressPart("stage#1[left]"), "stage_1_left_");
+    EXPECT_EQ(sanitizeAddressPart("clean-name_1"), "clean-name_1");
+    EXPECT_EQ(sanitizeAddressPart(""), "_");
+    // A sanitized part spliced into an address must contain no forbidden char.
+    const std::string addr = "/sillage/zone/" + sanitizeAddressPart("bad /name#") + "/enter";
+    for (const char forbidden : {' ', '#', '*', ',', '?', '[', ']', '{', '}'}) {
+        EXPECT_EQ(addr.find(forbidden, 14), std::string::npos); // after "/sillage/zone/"
+    }
+}
+
 TEST(Osc, BundleWrapsMessagesWithSizes) {
     Message a("/a");
     a.addInt32(1);

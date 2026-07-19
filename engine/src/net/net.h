@@ -74,6 +74,9 @@ SocketHandle tcpConnect(const std::string& host, uint16_t port, int timeoutMs);
 // Blocking helpers on a connected TCP socket.
 int tcpRecv(SocketHandle s, void* buffer, size_t size);
 void tcpSetRecvTimeout(SocketHandle s, int milliseconds);
+void setNonBlocking(SocketHandle s, bool nonBlocking);
+// 1 = readable now, 0 = timed out, -1 = error/closed.
+int waitReadable(SocketHandle s, int timeoutMs);
 bool tcpSendAll(SocketHandle s, const void* data, size_t size);
 void tcpClose(SocketHandle s);
 void tcpSetSendTimeout(SocketHandle s, int milliseconds);

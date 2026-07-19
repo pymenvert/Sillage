@@ -166,10 +166,23 @@ bool ProjectConfig::save(const std::filesystem::path& file, std::string& error) 
             return false;
         }
         out << toJson().serialize(2) << "\n";
+        out.flush();
+        // Verify the write actually succeeded (disk full, quota, I/O error)
+        // BEFORE the rename — otherwise the good project file gets replaced by
+        // a truncated one and the installation loses its configuration.
+        if (!out.good()) {
+            out.close();
+            std::error_code rmErr;
+            std::filesystem::remove(tmp, rmErr);
+            error = "write failed (disk full?) for " + tmp.string();
+            return false;
+        }
     }
     std::error_code ec;
     std::filesystem::rename(tmp, file, ec); // atomic on the same volume
     if (ec) {
+        std::error_code rmErr;
+        std::filesystem::remove(tmp, rmErr);
         error = "rename failed: " + ec.message();
         return false;
     }

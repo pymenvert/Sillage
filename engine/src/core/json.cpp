@@ -9,8 +9,17 @@ namespace sillage::json {
 
 namespace {
 
+// RAII depth counter: increments while inside a nested container.
+struct DepthGuard {
+    int& d;
+    explicit DepthGuard(int& depth) : d(depth) { ++d; }
+    ~DepthGuard() { --d; }
+};
+
 class Parser {
 public:
+    static constexpr int kMaxDepth = 64;
+
     explicit Parser(const std::string& text) : text_(text) {}
 
     ParseResult run() {
@@ -61,6 +70,13 @@ private:
     std::optional<Value> parseValue() {
         if (pos_ >= text_.size()) {
             fail("unexpected end");
+            return std::nullopt;
+        }
+        // Bound recursion: this is a recursive-descent parser fed by the
+        // network (POST /api/config), so deeply nested input would otherwise
+        // overflow the stack. Config JSON nests only a handful of levels.
+        if (depth_ >= kMaxDepth) {
+            fail("nesting too deep");
             return std::nullopt;
         }
         const char c = text_[pos_];
@@ -177,6 +193,7 @@ private:
     }
 
     std::optional<Value> parseArray() {
+        DepthGuard guard(depth_);
         consume('[');
         Array arr;
         skipWs();
@@ -202,6 +219,7 @@ private:
     }
 
     std::optional<Value> parseObject() {
+        DepthGuard guard(depth_);
         consume('{');
         Object obj;
         skipWs();
@@ -238,6 +256,7 @@ private:
 
     const std::string& text_;
     size_t pos_ = 0;
+    int depth_ = 0;
     std::string error_;
 };
 

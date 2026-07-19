@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sillage</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230a0e14'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%2338e1ff'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%2338e1ff' stroke-width='1.5' opacity='0.5'/%3E%3C/svg%3E">
 <style>
   :root {
     --bg: #0a0e14;
@@ -181,6 +182,14 @@ let frame = null, status = null, cfg = null;
 const trails = new Map();
 const eventLog = [];
 const tickHistory = [];
+
+// Escape any operator/API-controlled string before it touches innerHTML.
+// Zone names, sensor types etc. come from the config file / REST API and must
+// never be able to inject markup into the operator's browser.
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
 let mode = "nav";           // "nav" | "zone"
 let drawingZone = [];       // room-frame vertices being drawn
 let mouseRoom = null;       // cursor in room coords
@@ -248,15 +257,19 @@ el("mode-zone").onclick = () => setMode("zone");
 el("mode-pres").onclick = () => document.body.classList.toggle("presentation");
 
 async function finishZone() {
+  if (!cfg) { toast("Configuration pas encore chargée", false); setMode("nav"); return; }
   if (drawingZone.length < 3) { toast("3 sommets minimum", false); return; }
-  const name = prompt("Nom de la zone :", "zone-" + ((cfg?.zones?.length || 0) + 1));
-  if (!name) { setMode("nav"); return; }
+  const name = prompt("Nom de la zone :", "zone-" + ((cfg.zones?.length || 0) + 1));
+  if (name === null) { setMode("nav"); return; } // cancelled
+  const clean = name.trim();
+  if (!clean) { toast("Nom vide", false); setMode("nav"); return; }
   cfg.zones = cfg.zones || [];
-  cfg.zones.push({ name, polygon: drawingZone });
+  cfg.zones.push({ name: clean, polygon: drawingZone });
   await pushConfig();
   setMode("nav");
 }
 async function deleteZone(name) {
+  if (!cfg) return;
   cfg.zones = (cfg.zones || []).filter((z) => z.name !== name);
   await pushConfig();
 }
@@ -282,6 +295,7 @@ async function loadConfig() {
 }
 el("c-pred").oninput = () => { el("c-pred-val").textContent = el("c-pred").value; };
 el("c-apply").onclick = async () => {
+  if (!cfg) { toast("Configuration pas encore chargée", false); return; }
   cfg.outputs.augmentaOsc.enabled = el("c-osc-on").checked;
   cfg.outputs.augmentaOsc.host = el("c-osc-host").value;
   cfg.outputs.augmentaOsc.port = +el("c-osc-port").value;
@@ -296,12 +310,14 @@ el("c-apply").onclick = async () => {
   await pushConfig();
 };
 async function pushConfig() {
+  if (!cfg) return;
   try {
     const r = await (await fetch("/api/config", { method: "POST", body: JSON.stringify(cfg) })).json();
     if (r.ok) {
       toast(r.restartRequired ? "Appliqué — redémarrage requis pour la géométrie"
             : (r.persisted ? "Appliqué et enregistré" : "Appliqué (non persisté : lancez avec --config)"), true);
-    } else toast("Erreur : " + r.error, false);
+      await loadConfig(); // re-sync with authoritative server state after the write
+    } else toast("Erreur : " + esc(r.error), false);
   } catch { toast("Moteur injoignable", false); }
 }
 function toast(msg, ok) {
@@ -322,7 +338,16 @@ function connect() {
     setTimeout(connect, 1000);
   };
   ws.onmessage = (e) => {
-    frame = JSON.parse(e.data);
+    // One malformed frame must never blank the display: parse into a local,
+    // validate, then swap in. On any error the last good frame keeps rendering.
+    let next;
+    try {
+      next = JSON.parse(e.data);
+    } catch {
+      return;
+    }
+    if (!next || !Array.isArray(next.tracks) || !Array.isArray(next.room)) return;
+    frame = next;
     if (!view.fitted) fitView();
     if (frame.health) {
       tickHistory.push(frame.health.tickMs);
@@ -336,8 +361,7 @@ function connect() {
     }
     const live = new Set(frame.tracks.map((t) => t.id));
     for (const id of trails.keys()) if (!live.has(id)) trails.delete(id);
-    stampHeatmap();
-    updatePanels();
+    try { stampHeatmap(); updatePanels(); } catch (err) { console.error(err); }
   };
 }
 connect();
@@ -379,9 +403,9 @@ function updatePanels() {
   if (frame.zones && frame.zones.length > 0) {
     el("zones-panel").style.display = "block";
     el("zonelist").innerHTML = frame.zones.map((z) =>
-      `<div class="row"><span class="grow">${z.name}</span><b>${z.occ}</b>` +
-      `<span class="dim">· ${z.entries}</span>` +
-      `<button class="zdel" data-z="${z.name}" title="supprimer">×</button></div>`
+      `<div class="row"><span class="grow">${esc(z.name)}</span><b>${z.occ | 0}</b>` +
+      `<span class="dim">· ${z.entries | 0}</span>` +
+      `<button class="zdel" data-z="${esc(z.name)}" title="supprimer">×</button></div>`
     ).join("");
     for (const b of el("zonelist").querySelectorAll(".zdel")) {
       b.onclick = () => deleteZone(b.dataset.z);
@@ -390,7 +414,7 @@ function updatePanels() {
   if (frame.events && frame.events.length > 0) {
     el("events-panel").style.display = "block";
     for (const ev of frame.events) {
-      eventLog.unshift(`#${ev.id} ${ev.type === "enter" ? "→" : "←"} ${ev.zone}`);
+      eventLog.unshift(`#${ev.id | 0} ${ev.type === "enter" ? "→" : "←"} ${esc(ev.zone)}`);
     }
     eventLog.length = Math.min(eventLog.length, 6);
     el("eventlist").innerHTML = eventLog.map((e) => `<div class="row dim">${e}</div>`).join("");
@@ -409,10 +433,10 @@ function updateSensors() {
   if (!status) return;
   el("sensorlist").innerHTML = status.sensors.map((s) => {
     const c = sensorColors[s.id % sensorColors.length];
-    const state = s.connected ? `<span class="ok">${s.fps.toFixed(0)} Hz</span>`
+    const state = s.connected ? `<span class="ok">${(+s.fps || 0).toFixed(0)} Hz</span>`
                               : '<span class="bad">déconnecté</span>';
     return `<div class="row"><span class="swatch" style="background:${c}"></span>` +
-           `<span class="grow">${s.type} ${s.id}</span>${state}</div>`;
+           `<span class="grow">${esc(s.type)} ${s.id | 0}</span>${state}</div>`;
   }).join("");
 }
 function drawSpark() {
@@ -433,7 +457,12 @@ function drawSpark() {
 function draw() {
   requestAnimationFrame(draw);
   const w = canvas.width, h = canvas.height;
-  ctx.fillStyle = "#0a0e14";
+  // Subtle radial depth instead of a flat fill — reads far more premium on a
+  // projector or a big control-room screen.
+  const bg = ctx.createRadialGradient(w / 2, h * 0.42, 0, w / 2, h * 0.42, Math.max(w, h) * 0.75);
+  bg.addColorStop(0, "#0c121b");
+  bg.addColorStop(1, "#070a10");
+  ctx.fillStyle = bg;
   ctx.fillRect(0, 0, w, h);
   if (!frame) return;
 
@@ -549,8 +578,15 @@ function draw() {
     ctx.shadowBlur = 0;
     ctx.beginPath(); ctx.moveTo(X(t.x), Y(t.y));
     ctx.lineTo(X(t.x + t.vx * 0.6), Y(t.y + t.vy * 0.6)); ctx.stroke();
+    // Filled core dot for a crisp, physical presence (solid = tracked,
+    // dashed ring only = coasting/occluded).
+    if (!t.coast) {
+      ctx.fillStyle = color; ctx.globalAlpha = 0.9;
+      ctx.beginPath(); ctx.arc(X(t.x), Y(t.y), 3.5 * devicePixelRatio, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
     ctx.fillStyle = color;
-    ctx.font = `${12 * devicePixelRatio}px "JetBrains Mono", monospace`;
+    ctx.font = `600 ${12 * devicePixelRatio}px "JetBrains Mono", monospace`;
     ctx.fillText(`#${t.id}`, X(t.x) + 10 * devicePixelRatio, Y(t.y) - 10 * devicePixelRatio);
   }
 }

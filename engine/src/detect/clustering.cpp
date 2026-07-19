@@ -16,6 +16,9 @@ int64_t cellKey(int32_t cx, int32_t cy) {
 
 Cluster makeCluster(const std::vector<WorldPoint>& points, std::vector<uint32_t> members) {
     Cluster c;
+    if (members.empty()) {
+        return c; // no NaN centroid/radius from a division by zero
+    }
     c.pointCount = static_cast<uint32_t>(members.size());
     Vec2 sum{};
     for (const uint32_t i : members) {
@@ -35,8 +38,10 @@ Cluster makeCluster(const std::vector<WorldPoint>& points, std::vector<uint32_t>
 
 std::vector<Cluster> clusterPoints(const std::vector<WorldPoint>& points,
                                    const ClusteringParams& params) {
-    const float cell = params.linkDistance;
-    const float linkSq = params.linkDistance * params.linkDistance;
+    // Guard a non-positive link distance (hand-edited config): it is the cell
+    // size of the spatial hash, and 0 would divide by zero in the grid map.
+    const float cell = params.linkDistance > 1e-4f ? params.linkDistance : 0.35f;
+    const float linkSq = cell * cell;
     const size_t n = points.size();
 
     std::unordered_map<int64_t, std::vector<uint32_t>> grid;

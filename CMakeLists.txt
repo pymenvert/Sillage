@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(sillage
-    VERSION 1.0.0
+    VERSION 1.0.1
     DESCRIPTION "Multi-LiDAR people tracking engine for immersive spaces"
     LANGUAGES CXX)
 

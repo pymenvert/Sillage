@@ -40,6 +40,16 @@ TEST(Json, RejectsMalformedInput) {
     EXPECT_FALSE(json::parse("\"unterminated").value.has_value());
 }
 
+TEST(Json, RejectsDeeplyNestedInputWithoutStackOverflow) {
+    // A recursive-descent parser fed by the network must not blow the stack.
+    std::string deep(5000, '[');
+    const auto r = json::parse(deep);
+    EXPECT_FALSE(r.value.has_value());
+    EXPECT_NE(r.error.find("deep"), std::string::npos);
+    // A legitimately-nested-but-shallow document still parses.
+    EXPECT_TRUE(json::parse("[[[[[[1]]]]]]").value.has_value());
+}
+
 // --- Project config --------------------------------------------------------------
 
 TEST(ProjectConfig, SaveLoadRoundtrip) {
@@ -116,6 +126,14 @@ TEST(Zones, EnterExitAndCounters) {
     ASSERT_EQ(events.size(), 1u);
     EXPECT_EQ(events[0].type, ZoneEvent::Type::Exit);
     EXPECT_EQ(zones.status()[0].totalEntries, 2u);
+}
+
+TEST(Zones, DegeneratePolygonNeverCrashesOrMatches) {
+    // Belt-and-suspenders: a <3-vertex polygon (e.g. an unfinished editor
+    // zone) must simply never contain anything, not divide by zero.
+    EXPECT_FALSE(ZoneEngine::pointInPolygon({1, 1}, {}));
+    EXPECT_FALSE(ZoneEngine::pointInPolygon({1, 1}, {{0, 0}}));
+    EXPECT_FALSE(ZoneEngine::pointInPolygon({1, 1}, {{0, 0}, {2, 2}}));
 }
 
 TEST(Zones, PointInConcavePolygon) {

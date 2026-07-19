@@ -11,25 +11,35 @@ constexpr uint32_t kVersion = 1;
 
 bool ScanRecorder::open(const std::filesystem::path& file) {
     close();
+    failed_ = false;
     file_ = std::fopen(file.string().c_str(), "wb");
     if (file_ == nullptr) {
         return false;
     }
-    std::fwrite(kMagic, 1, 4, file_);
-    std::fwrite(&kVersion, sizeof(kVersion), 1, file_);
+    if (std::fwrite(kMagic, 1, 4, file_) != 4 ||
+        std::fwrite(&kVersion, sizeof(kVersion), 1, file_) != 1) {
+        failed_ = true;
+        return false;
+    }
     return true;
 }
 
 void ScanRecorder::write(uint64_t tick, const ScanFrame& frame) {
-    if (file_ == nullptr) {
+    if (file_ == nullptr || failed_) {
         return;
     }
-    std::fwrite(&tick, sizeof(tick), 1, file_);
-    std::fwrite(&frame.sensor, sizeof(frame.sensor), 1, file_);
-    const auto count = static_cast<uint32_t>(frame.points.size());
-    std::fwrite(&count, sizeof(count), 1, file_);
     static_assert(sizeof(RangePoint) == 8, "RangePoint must stay {f32,f32}");
-    std::fwrite(frame.points.data(), sizeof(RangePoint), frame.points.size(), file_);
+    const auto count = static_cast<uint32_t>(frame.points.size());
+    // Check every write: a disk-full mid-recording must stop cleanly rather
+    // than emit a truncated record that would desync the whole replay.
+    const bool ok = std::fwrite(&tick, sizeof(tick), 1, file_) == 1 &&
+                    std::fwrite(&frame.sensor, sizeof(frame.sensor), 1, file_) == 1 &&
+                    std::fwrite(&count, sizeof(count), 1, file_) == 1 &&
+                    std::fwrite(frame.points.data(), sizeof(RangePoint), frame.points.size(),
+                                file_) == frame.points.size();
+    if (!ok) {
+        failed_ = true; // stop writing; isOpen() stays true so callers can notice via failed()
+    }
 }
 
 void ScanRecorder::close() {

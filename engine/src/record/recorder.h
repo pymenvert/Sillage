@@ -28,9 +28,11 @@ public:
     void write(uint64_t tick, const ScanFrame& frame);
     void close();
     bool isOpen() const { return file_ != nullptr; }
+    bool failed() const { return failed_; } // a write error occurred (disk full)
 
 private:
     std::FILE* file_ = nullptr;
+    bool failed_ = false;
 };
 
 class ScanReplayer {

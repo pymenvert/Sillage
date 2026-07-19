@@ -9,9 +9,11 @@
 using socklen_type = int;
 #else
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -221,14 +223,56 @@ SocketHandle tcpConnect(const std::string& host, uint16_t port, int timeoutMs) {
         return kInvalidSocket;
     }
 #endif
-    // Blocking connect with OS default timeout is acceptable here: drivers
-    // run on their own thread and use recv timeouts once connected.
-    if (::connect(s, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) != 0) {
+    // Bounded connect: non-blocking connect + select, so a dead host does not
+    // park the driver thread for the OS default (~20 s) and, worse, make
+    // stop() wait that long. Falls back to blocking on setup failure.
+    setNonBlocking(static_cast<SocketHandle>(s), true);
+    const int rc = ::connect(s, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr));
+    bool connected = (rc == 0);
+    if (!connected) {
+        fd_set writable;
+        FD_ZERO(&writable);
+        FD_SET(s, &writable);
+        timeval tv{};
+        tv.tv_sec = timeoutMs / 1000;
+        tv.tv_usec = (timeoutMs % 1000) * 1000;
+        if (::select(static_cast<int>(s) + 1, nullptr, &writable, nullptr, &tv) > 0) {
+            int err = 0;
+            socklen_type len = sizeof(err);
+            ::getsockopt(s, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&err), &len);
+            connected = (err == 0);
+        }
+    }
+    if (!connected) {
         tcpClose(static_cast<SocketHandle>(s));
         return kInvalidSocket;
     }
+    setNonBlocking(static_cast<SocketHandle>(s), false);
     tcpSetRecvTimeout(static_cast<SocketHandle>(s), timeoutMs);
     return static_cast<SocketHandle>(s);
+}
+
+int waitReadable(SocketHandle s, int timeoutMs) {
+    if (s == kInvalidSocket) {
+        return -1;
+    }
+    fd_set readable;
+    FD_ZERO(&readable);
+    FD_SET(toNative(s), &readable);
+    timeval tv{};
+    tv.tv_sec = timeoutMs / 1000;
+    tv.tv_usec = (timeoutMs % 1000) * 1000;
+    return ::select(static_cast<int>(toNative(s)) + 1, &readable, nullptr, nullptr, &tv);
+}
+
+void setNonBlocking(SocketHandle s, bool nonBlocking) {
+#ifdef _WIN32
+    u_long mode = nonBlocking ? 1 : 0;
+    ::ioctlsocket(toNative(s), FIONBIO, &mode);
+#else
+    const int flags = ::fcntl(toNative(s), F_GETFL, 0);
+    ::fcntl(toNative(s), F_SETFL, nonBlocking ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK));
+#endif
 }
 
 void tcpSetRecvTimeout(SocketHandle s, int milliseconds) {

@@ -81,6 +81,9 @@ std::vector<int> solveAssignment(const std::vector<float>& cost, int rows, int c
 }
 
 std::vector<Vec2> Tracker::beginTick(float dt) {
+    if (!(dt > 0.0f)) {
+        dt = 1.0f / 60.0f;
+    }
     std::vector<Vec2> predictions;
     for (InternalTrack& t : tracks_) {
         t.filter.predict(dt);
@@ -133,6 +136,12 @@ void Tracker::associate(const std::vector<int>& trackIdx, const std::vector<int>
 
 std::vector<Track> Tracker::commit(const std::vector<Cluster>& clusters, float dt,
                                    uint64_t tick) {
+    // Guard a non-positive dt: velocity terms divide by it. dt comes from a
+    // fixed tick rate today, but a future variable-rate source with a zero
+    // interval would inject inf/NaN into the cost matrix and outputs.
+    if (!(dt > 0.0f)) {
+        dt = 1.0f / 60.0f;
+    }
     // Shared measurements: full-overlap blobs claimed by several confirmed
     // tracks feed no filter; their claimants coast without aging.
     std::vector<char> clusterShared(clusters.size(), 0);

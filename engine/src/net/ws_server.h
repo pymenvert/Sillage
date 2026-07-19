@@ -3,8 +3,11 @@
 #include "net/net.h"
 
 #include <atomic>
+#include <condition_variable>
+#include <deque>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -16,12 +19,21 @@ namespace sillage::net {
 // Exposed for tests.
 std::string websocketAcceptKey(const std::string& clientKey);
 
-// Minimal HTTP + WebSocket server for the M0 dev UI: serves static files from
-// a doc root and pushes text frames to every connected WebSocket client.
-// Push-only by design; client frames are consumed (ping/close honored).
-// Replaced by a full API server (uWebSockets) when the REST config API lands.
+// HTTP + WebSocket server: serves static files and the REST API, and pushes
+// text frames to connected WebSocket clients.
+//
+// Threading model (hardened): the accept thread only accepts and hands each
+// connection to its own thread with a receive timeout, so no single peer can
+// stall the control plane (slowloris) or the shutdown. Each WebSocket client
+// is owned end to end by one thread: broadcast() only enqueues into per-client
+// queues (no socket op on the caller's thread), and only the owning thread
+// ever closes its socket — eliminating the use-after-close race.
 class WsHttpServer {
 public:
+    static constexpr size_t kMaxClients = 32;
+    static constexpr int kRecvTimeoutMs = 5000;
+    static constexpr size_t kMaxQueuedFrames = 120; // ~4 s at 30 Hz; drop-oldest beyond
+
     ~WsHttpServer();
 
     bool start(const std::string& bindHost, uint16_t port, std::filesystem::path docRoot);
@@ -42,10 +54,21 @@ public:
     size_t clientCount() const;
 
 private:
+    // One connected WebSocket client, owned by exactly one thread.
+    struct Client {
+        SocketHandle socket = kInvalidSocket;
+        std::mutex mutex;
+        std::condition_variable cv;
+        std::deque<std::shared_ptr<const std::vector<uint8_t>>> queue;
+        bool dead = false;
+    };
+
     void acceptLoop();
     void handleConnection(SocketHandle client);
+    void clientLoop(std::shared_ptr<Client> client);
     void serveHttp(SocketHandle client, const std::string& method, const std::string& target,
                    const std::string& body);
+    void reapFinished(); // join+drop completed connection threads
 
     TcpListener listener_;
     std::filesystem::path docRoot_;
@@ -54,8 +77,9 @@ private:
     std::atomic<bool> running_{false};
 
     mutable std::mutex clientsMutex_;
-    std::vector<SocketHandle> clients_;
-    std::vector<std::thread> readerThreads_;
+    std::vector<std::shared_ptr<Client>> clients_;
+    // Each connection thread carries a done flag it sets on exit; reaped lazily.
+    std::vector<std::pair<std::thread, std::shared_ptr<std::atomic<bool>>>> threads_;
 };
 
 } // namespace sillage::net

@@ -9,6 +9,30 @@ namespace sillage {
 
 namespace {
 
+// Escapes a string for the hand-rolled JSON in the WS broadcast: one stray
+// quote or backslash in a zone name would otherwise corrupt every frame.
+void appendJsonString(std::string& out, const std::string& s) {
+    out += '"';
+    for (const char c : s) {
+        switch (c) {
+        case '"': out += "\\\""; break;
+        case '\\': out += "\\\\"; break;
+        case '\n': out += "\\n"; break;
+        case '\r': out += "\\r"; break;
+        case '\t': out += "\\t"; break;
+        default:
+            if (static_cast<unsigned char>(c) < 0x20) {
+                char buf[8];
+                std::snprintf(buf, sizeof(buf), "\\u%04x", c);
+                out += buf;
+            } else {
+                out += c;
+            }
+        }
+    }
+    out += '"';
+}
+
 // Two virtual lidars in opposite corners: multi-sensor from the first line of
 // code, so fusion never becomes a retrofit.
 std::vector<SensorPose> demoSensorLayout(Vec2 room) {
@@ -245,7 +269,8 @@ bool Engine::run() {
             }
             for (const ZoneEvent& event : zoneEngine_.update(snap.tracks)) {
                 if (config_.oscEnabled) {
-                    osc::Message msg("/sillage/zone/" + event.zone + "/" +
+                    osc::Message msg("/sillage/zone/" + osc::sanitizeAddressPart(event.zone) +
+                                     "/" +
                                      (event.type == ZoneEvent::Type::Enter ? "enter" : "exit"));
                     msg.addInt32(static_cast<int32_t>(event.trackId));
                     const auto bytes = msg.encode();
@@ -304,12 +329,29 @@ std::string Engine::handleApi(const std::string& method, const std::string& path
         }
         std::lock_guard lock(configMutex_);
         // Zones, outputs and conditioning hot-apply at the next tick; sensor
-        // and room geometry need a pipeline rebuild, i.e. a restart.
+        // and room geometry need a pipeline rebuild, i.e. a restart. Compare
+        // sensors in full (not just count): editing a sensor's host or pose
+        // must still report restartRequired, or disk and runtime silently
+        // diverge.
+        auto sensorsDiffer = [&] {
+            if (incoming->sensors.size() != project_.sensors.size()) {
+                return true;
+            }
+            for (size_t i = 0; i < incoming->sensors.size(); ++i) {
+                const SensorConfig& a = incoming->sensors[i];
+                const SensorConfig& b = project_.sensors[i];
+                if (a.type != b.type || a.host != b.host || a.port != b.port ||
+                    a.pose.position.x != b.pose.position.x ||
+                    a.pose.position.y != b.pose.position.y || a.pose.theta != b.pose.theta) {
+                    return true;
+                }
+            }
+            return false;
+        };
         const bool restartRequired =
             incoming->roomSize.x != project_.roomSize.x ||
             incoming->roomSize.y != project_.roomSize.y ||
-            incoming->simEnabled != project_.simEnabled ||
-            incoming->sensors.size() != project_.sensors.size();
+            incoming->simEnabled != project_.simEnabled || sensorsDiffer();
         if (!config_.projectPath.empty()) {
             std::string saveError;
             if (!incoming->save(config_.projectPath, saveError)) {
@@ -466,7 +508,9 @@ std::string Engine::snapshotToJson(const FrameSnapshot& snap) {
     for (size_t z = 0; z < zoneStatus.size(); ++z) {
         const auto& s = zoneStatus[z];
         out += z ? "," : "";
-        out += "{\"name\":\"" + s.zone->name + "\",\"occ\":" + std::to_string(s.occupants) +
+        out += "{\"name\":";
+        appendJsonString(out, s.zone->name);
+        out += ",\"occ\":" + std::to_string(s.occupants) +
                ",\"entries\":" + std::to_string(s.totalEntries) + ",\"poly\":[";
         for (size_t p = 0; p < s.zone->polygon.size(); ++p) {
             std::snprintf(buf, sizeof(buf), "%s[%.2f,%.2f]", p ? "," : "",
@@ -480,8 +524,9 @@ std::string Engine::snapshotToJson(const FrameSnapshot& snap) {
     for (size_t e = 0; e < pendingEvents_.size(); ++e) {
         const ZoneEvent& ev = pendingEvents_[e];
         out += e ? "," : "";
-        out += "{\"zone\":\"" + ev.zone + "\",\"type\":\"" +
-               (ev.type == ZoneEvent::Type::Enter ? "enter" : "exit") +
+        out += "{\"zone\":";
+        appendJsonString(out, ev.zone);
+        out += ",\"type\":\"" + std::string(ev.type == ZoneEvent::Type::Enter ? "enter" : "exit") +
                "\",\"id\":" + std::to_string(ev.trackId) + "}";
     }
     pendingEvents_.clear();

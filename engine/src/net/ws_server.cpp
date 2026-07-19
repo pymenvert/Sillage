@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cstring>
 #include <fstream>
+#include <memory>
 #include <sstream>
 
 namespace sillage::net {
@@ -197,24 +199,45 @@ void WsHttpServer::stop() {
     if (acceptThread_.joinable()) {
         acceptThread_.join();
     }
+    // Wake every client thread out of its wait so it can observe !running_ and
+    // close its own socket. We never close a client socket from here — only its
+    // owning thread does — which is what removes the use-after-close race.
     {
         std::lock_guard lock(clientsMutex_);
-        for (const SocketHandle c : clients_) {
-            tcpClose(c);
-        }
-        clients_.clear();
-    }
-    for (std::thread& t : readerThreads_) {
-        if (t.joinable()) {
-            t.join();
+        for (auto& client : clients_) {
+            std::lock_guard clientLock(client->mutex);
+            client->dead = true;
+            client->cv.notify_all();
         }
     }
-    readerThreads_.clear();
+    for (auto& [thread, done] : threads_) {
+        if (thread.joinable()) {
+            thread.join();
+        }
+    }
+    threads_.clear();
+    clients_.clear();
 }
 
 size_t WsHttpServer::clientCount() const {
     std::lock_guard lock(clientsMutex_);
     return clients_.size();
+}
+
+void WsHttpServer::reapFinished() {
+    // Called from the accept thread: join and drop connection threads that have
+    // finished, so short-lived HTTP requests and disconnected WS clients do not
+    // accumulate thread handles over a multi-week run.
+    std::lock_guard lock(clientsMutex_);
+    std::erase_if(threads_, [](auto& entry) {
+        if (entry.second->load()) {
+            if (entry.first.joinable()) {
+                entry.first.join();
+            }
+            return true;
+        }
+        return false;
+    });
 }
 
 void WsHttpServer::acceptLoop() {
@@ -223,17 +246,39 @@ void WsHttpServer::acceptLoop() {
         if (client == kInvalidSocket) {
             continue; // listener closed on stop(), loop exits via running_
         }
-        handleConnection(client);
+        reapFinished();
+        // Bound concurrent connections: refuse the excess instead of letting a
+        // flood exhaust threads/handles.
+        {
+            std::lock_guard lock(clientsMutex_);
+            if (threads_.size() >= kMaxClients) {
+                const std::string resp =
+                    "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\n\r\n";
+                tcpSendAll(client, resp.data(), resp.size());
+                tcpClose(client);
+                continue;
+            }
+        }
+        // Every accepted socket gets a receive timeout up front, so a silent or
+        // partial peer cannot wedge its handler thread (slowloris) or shutdown.
+        tcpSetRecvTimeout(client, kRecvTimeoutMs);
+        auto done = std::make_shared<std::atomic<bool>>(false);
+        std::thread worker([this, client, done] {
+            handleConnection(client);
+            done->store(true);
+        });
+        std::lock_guard lock(clientsMutex_);
+        threads_.emplace_back(std::move(worker), std::move(done));
     }
 }
 
 void WsHttpServer::handleConnection(SocketHandle client) {
-    // Read request headers.
+    // Read request headers (bounded by the recv timeout set by the caller).
     std::string request;
     char buf[2048];
     while (request.find("\r\n\r\n") == std::string::npos) {
         const int n = tcpRecv(client, buf, sizeof(buf));
-        if (n <= 0) {
+        if (n <= 0) { // timeout, close, or error — never blocks forever
             tcpClose(client);
             return;
         }
@@ -247,6 +292,12 @@ void WsHttpServer::handleConnection(SocketHandle client) {
     std::istringstream firstLine(request.substr(0, request.find("\r\n")));
     std::string method, target;
     firstLine >> method >> target;
+    if (method.empty() || target.empty()) { // malformed request line
+        const std::string resp = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
+        tcpSendAll(client, resp.data(), resp.size());
+        tcpClose(client);
+        return;
+    }
 
     // Read the request body if any (POST config payloads).
     std::string body;
@@ -281,29 +332,65 @@ void WsHttpServer::handleConnection(SocketHandle client) {
             tcpClose(client);
             return;
         }
-        tcpSetSendTimeout(client, 200);
+        auto clientState = std::make_shared<Client>();
+        clientState->socket = client;
         {
             std::lock_guard lock(clientsMutex_);
-            clients_.push_back(client);
+            clients_.push_back(clientState);
         }
-        // Reader drains client frames so the socket stays healthy; close frame
-        // or error removes the client.
-        readerThreads_.emplace_back([this, client] {
-            char drain[1024];
-            while (running_) {
-                const int n = tcpRecv(client, drain, sizeof(drain));
-                if (n <= 0) {
-                    break;
-                }
-            }
+        clientLoop(clientState); // owns the socket until death, then closes it
+        {
             std::lock_guard lock(clientsMutex_);
-            std::erase(clients_, client);
-        });
+            std::erase(clients_, clientState);
+        }
         return;
     }
 
     serveHttp(client, method, target, body);
     tcpClose(client);
+}
+
+void WsHttpServer::clientLoop(std::shared_ptr<Client> client) {
+    const SocketHandle socket = client->socket;
+    // Bound a stuck send so one wedged peer can't pin this thread forever; a
+    // client that can't drain 2 s of frames is dropped.
+    tcpSetSendTimeout(socket, 2000);
+    char drain[1024];
+    while (running_) {
+        // Wait (up to 25 ms) for a queued frame — the CV wakes instantly on
+        // broadcast, keeping viz latency ~0 — then send outside the lock so a
+        // slow socket never stalls broadcast()'s caller.
+        std::deque<std::shared_ptr<const std::vector<uint8_t>>> outgoing;
+        {
+            std::unique_lock lock(client->mutex);
+            client->cv.wait_for(lock, std::chrono::milliseconds(25), [&] {
+                return !client->queue.empty() || client->dead || !running_;
+            });
+            if (client->dead) {
+                break;
+            }
+            outgoing.swap(client->queue);
+        }
+        bool ok = true;
+        for (const auto& frame : outgoing) {
+            if (!tcpSendAll(socket, frame->data(), frame->size())) {
+                ok = false;
+                break;
+            }
+        }
+        if (!ok) {
+            break;
+        }
+        // Close detection: only if the socket is already readable (0 ms poll),
+        // drain incoming; recv returning 0 means the peer closed.
+        if (waitReadable(socket, 0) == 1) {
+            const int n = tcpRecv(socket, drain, sizeof(drain));
+            if (n <= 0) {
+                break;
+            }
+        }
+    }
+    tcpClose(socket); // sole owner: no other thread ever closes this handle
 }
 
 void WsHttpServer::serveHttp(SocketHandle client, const std::string& method,
@@ -323,15 +410,36 @@ void WsHttpServer::serveHttp(SocketHandle client, const std::string& method,
         return;
     }
 
-    std::string path = target == "/" ? "/index.html" : target;
-    // Reject path traversal outright.
-    if (path.find("..") != std::string::npos) {
+    // Strip a query string, then map the URL path to a file. The path must be
+    // absolute-form, contain no traversal, and — critically on Windows — no
+    // backslash, drive letter or colon (otherwise `docRoot_ / "C:/x"` resolves
+    // to an absolute path OUTSIDE docRoot_, an arbitrary file read).
+    std::string urlPath = target.substr(0, target.find('?'));
+    if (urlPath == "/") {
+        urlPath = "/index.html";
+    }
+    const bool unsafe =
+        urlPath.empty() || urlPath.front() != '/' || urlPath.find("..") != std::string::npos ||
+        urlPath.find('\\') != std::string::npos || urlPath.find(':') != std::string::npos ||
+        urlPath.find('\0') != std::string::npos;
+    if (unsafe) {
         const std::string resp = "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n";
         tcpSendAll(client, resp.data(), resp.size());
         return;
     }
 
-    const std::filesystem::path file = docRoot_ / path.substr(1);
+    // Build the path from lexically-normalized relative components, then verify
+    // the result is still contained within docRoot_ (defense in depth).
+    const std::filesystem::path file =
+        (docRoot_ / std::filesystem::path(urlPath.substr(1)).lexically_normal())
+            .lexically_normal();
+    const std::filesystem::path rootNorm = docRoot_.lexically_normal();
+    const std::string rel = file.lexically_relative(rootNorm).generic_string();
+    if (rel.empty() || rel == ".." || rel.rfind("../", 0) == 0) {
+        const std::string resp = "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n";
+        tcpSendAll(client, resp.data(), resp.size());
+        return;
+    }
     std::ifstream in(file, std::ios::binary);
     if (!in) {
         const std::string resp = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
@@ -359,15 +467,23 @@ void WsHttpServer::serveHttp(SocketHandle client, const std::string& method,
 }
 
 void WsHttpServer::broadcast(const std::string& text) {
-    const std::vector<uint8_t> frame = wsTextFrame(text);
+    // Encode once, share by pointer. This runs on the real-time tick thread and
+    // must never touch a socket: it only enqueues into each client's queue and
+    // wakes its owning thread. A slow client's queue is capped (drop-oldest) so
+    // it can neither stall the tick nor grow memory without bound.
+    auto frame = std::make_shared<const std::vector<uint8_t>>(wsTextFrame(text));
     std::lock_guard lock(clientsMutex_);
-    std::erase_if(clients_, [&](const SocketHandle c) {
-        if (!tcpSendAll(c, frame.data(), frame.size())) {
-            tcpClose(c);
-            return true;
+    for (auto& client : clients_) {
+        std::lock_guard clientLock(client->mutex);
+        if (client->dead) {
+            continue;
         }
-        return false;
-    });
+        if (client->queue.size() >= kMaxQueuedFrames) {
+            client->queue.pop_front();
+        }
+        client->queue.push_back(frame);
+        client->cv.notify_one();
+    }
 }
 
 } // namespace sillage::net

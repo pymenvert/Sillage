@@ -7,8 +7,10 @@
 namespace sillage {
 
 BackgroundModel::BackgroundModel(uint32_t binCount, uint32_t learnFrames, float margin)
-    : minRange_(binCount, std::numeric_limits<float>::infinity()), learnFrames_(learnFrames),
-      margin_(margin) {}
+    // Clamp to >= 1 bin: binOf() takes a modulo by the bin count, so a
+    // zero-bin model (e.g. a hand-edited config) would divide by zero.
+    : minRange_(std::max(binCount, 1u), std::numeric_limits<float>::infinity()),
+      learnFrames_(learnFrames), margin_(margin) {}
 
 uint32_t BackgroundModel::binOf(float angle) const {
     constexpr float twoPi = 2.0f * std::numbers::pi_v<float>;

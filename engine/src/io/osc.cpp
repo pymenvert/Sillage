@@ -55,6 +55,18 @@ std::vector<uint8_t> Message::encode() const {
     return out;
 }
 
+std::string sanitizeAddressPart(const std::string& part) {
+    std::string out;
+    out.reserve(part.size());
+    for (const char c : part) {
+        const bool forbidden = c == ' ' || c == '#' || c == '*' || c == ',' || c == '/' ||
+                               c == '?' || c == '[' || c == ']' || c == '{' || c == '}' ||
+                               static_cast<unsigned char>(c) < 0x20;
+        out += forbidden ? '_' : c;
+    }
+    return out.empty() ? "_" : out;
+}
+
 std::vector<uint8_t> encodeBundle(const std::vector<std::vector<uint8_t>>& messages) {
     std::vector<uint8_t> out;
     appendString(out, "#bundle");
