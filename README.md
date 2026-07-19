@@ -5,9 +5,12 @@
 > identifiants persistants, et diffuse leurs positions vers les logiciels créatifs
 > (TouchDesigner, Unity, Unreal, Madmapper, Resolume…).
 
-**Statut : v1.0.0** — voir le [CHANGELOG](CHANGELOG.md), le
+**Statut : v1.0.1** — voir le [CHANGELOG](CHANGELOG.md), le
 [guide de démarrage](docs/10-guide-demarrage.md) et les limitations connues (validation
 sur matériel physique en tête de la feuille de route post-1.0).
+
+**Licence : [PolyForm Noncommercial 1.0.0](LICENSE.md)** — usage non commercial libre
+(artistes, écoles, recherche, évaluation) ; l'usage commercial requiert une licence.
 
 ```bash
 cmake --preset windows-msvc && cmake --build --preset windows-msvc

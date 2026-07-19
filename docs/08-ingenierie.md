@@ -72,9 +72,15 @@ placement ([04 §1](04-calibration.md)).
 | UI | navigateur → `http://localhost:8080` | idem | idem |
 | Signature | Authenticode si certificat | — | Developer ID + notarisation (compte Apple 99 $/an requis ; builds dev non signés utilisables) |
 
-## Licences (à décider avant publication — voir première réunion projet)
+## Licence
 
-Options : cœur open source (AGPL) + services payants, open core, ou propriétaire avec SDKs
-ouverts. **Décision non prise** — n'engage rien tant que le repo est privé, mais bloque
-toute publication. Les licences des SDKs capteurs utilisés (BSD/MIT/Apache) sont
-compatibles avec tous ces scénarios.
+**Décidée (2026-07-12) : [PolyForm Noncommercial 1.0.0](../LICENSE.md)** (source-available).
+L'usage non commercial est libre (artistes, écoles, recherche, évaluation) ; tout usage
+commercial — installation payante, déploiement client, produit générant du revenu — requiert
+une licence commerciale auprès du détenteur des droits. Ce modèle protège la
+commercialisation d'un concurrent tout en laissant le milieu créatif adopter l'outil.
+
+Point à finaliser côté juridique : remplacer « pymenvert » par le nom légal / la société
+dans `LICENSE.md` le jour d'une constitution d'entité, et ajouter un e-mail de contact
+commercial dédié (aujourd'hui : via le profil GitHub). Les licences des SDKs capteurs
+utilisés (BSD/MIT/Apache) sont compatibles avec ce modèle.
