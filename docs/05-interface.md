@@ -1,5 +1,9 @@
 # 05 — Interface de configuration
 
+> ⚠️ **Document de conception.** Il décrit la cible des jalons M0→M6, **pas**
+> l'état livré en v1.0.1. Pour ce qui existe réellement : [CHANGELOG](../CHANGELOG.md)
+> et [guide de démarrage](10-guide-demarrage.md).
+
 Objectif : une UI **belle, moderne et efficace** — le premier contact avec le produit, et
 l'outil de travail de l'installateur sur site. Web embarquée ([ADR-002](adr/002-ui-web-embarquee.md)) :
 accessible sur `http://<machine>:8080` depuis n'importe quel navigateur, y compris une

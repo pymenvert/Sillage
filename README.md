@@ -17,28 +17,40 @@ cmake --preset windows-msvc && cmake --build --preset windows-msvc
 build/windows-msvc/engine/Release/sillage-engine   # UI sur http://127.0.0.1:8080
 ```
 
-## Ce que fait Sillage
+## Ce que fait Sillage — livré en v1.0.1
 
 - **Tracking multi-personnes** en temps réel (position, vitesse, taille, trajectoire) avec des
-  **IDs stables** qui survivent aux croisements et aux occultations.
+  **IDs stables** qui survivent aux croisements et aux occultations. Mesuré en continu par
+  7 scénarios en CI : 0 échange d'ID sur croisements, demi-tours, côte-à-côte et occultations.
 - **Fusion multi-LiDAR** : plusieurs capteurs couvrent une même salle, fusionnés au niveau des
   points dans un référentiel commun — les angles morts d'un capteur sont couverts par les autres.
-- **Calibration assistée** : positionnement manuel drag & drop + auto-calibration « en marchant ».
-- **Sorties standard** : OSC (compatible protocole Augmenta), WebSocket JSON, TUIO,
-  **PSN** (consoles lumière : grandMA3, disguise…), **ADM-OSC** (audio spatialisé :
-  L-ISA, SPAT, d&b Soundscape), MQTT — compatible immédiatement avec les écosystèmes
-  créatif **et** spectacle vivant.
-- **Interface web moderne** embarquée : configuration depuis n'importe quel navigateur,
-  y compris une tablette sur site.
-- **Enregistrement / replay** : rejouer une session capteur à l'identique pour déboguer,
-  régler, ou valider une mise à jour.
-- **Simulateur intégré** : scénarios synthétiques (croisements, groupes, files) avec vérité
-  terrain, utilisés comme tests de non-régression du tracker en CI.
-- **Outillage de maintenance et debug** : enregistrements au format ouvert MCAP (lisibles
-  dans Foxglove Studio), profilage Tracy intégré, `sillage doctor`, injection de pannes,
-  rapport de diagnostic en un clic.
-- **Multiplateforme** : Windows 10/11, Ubuntu 22.04+ et macOS 13+ (Apple Silicon et Intel),
-  service système, fonctionnement headless.
+  Chaque capteur apprend son fond indépendamment : un capteur absent réduit la couverture,
+  il n'arrête pas le moteur.
+- **Capteurs** : Hokuyo URG/UST (SCIP 2.2), SICK TiM (CoLa A), **pont UDP universel** rendant
+  n'importe quel capteur compatible via de simples datagrammes JSON (script RPLIDAR fourni),
+  plus simulateur et replay.
+- **Sorties** : OSC compatible **protocole Augmenta** (plugins TouchDesigner/Unity/Unreal
+  existants), **TUIO 1.1**, **ADM-OSC** (audio spatialisé : L-ISA, SPAT, d&b Soundscape),
+  WebSocket JSON, et événements de zones en OSC.
+- **Mode spectacle** : verrou de configuration, coupure d'urgence des sorties, réapprentissage
+  du fond, bandeau d'alarme nommant la cause réelle d'un défaut.
+- **Interface web embarquée** : scène live, éditeur de zones à la souris, réglages appliqués
+  à chaud, heatmap, mode présentation — depuis n'importe quel navigateur.
+- **Enregistrement / replay déterministe** (`.srec`) : rejouer une session à l'identique pour
+  déboguer ou valider une mise à jour.
+- **Simulateur + métriques MOT** (`--eval`, `--debug-scenario`) : la robustesse du tracker est
+  une porte de CI, pas une promesse.
+- **Multiplateforme** : Windows 10/11 (service SCM natif), Ubuntu 22.04+ (systemd),
+  macOS 13+ universel (Apple Silicon et Intel), fonctionnement headless.
+
+### Prévu, non livré
+
+Ces éléments sont conçus et documentés mais **absents de la v1.0.1** : sortie **PSN**
+(PosiStageNet) et **MQTT**, enregistrement au format **MCAP**/Foxglove (le format actuel est
+`.srec`, natif), profilage **Tracy**, commande **`doctor`**, injection de pannes et export de
+diagnostic, perception **3D** native, workflow de calibration dans l'interface (le solveur
+existe et est testé, l'assistant guidé non). Les documents `docs/01`–`docs/09` décrivent la
+**cible** M0→M6 ; le [CHANGELOG](CHANGELOG.md) fait foi sur ce qui est livré.
 
 ## Documentation de conception
 
@@ -56,20 +68,23 @@ build/windows-msvc/engine/Release/sillage-engine   # UI sur http://127.0.0.1:808
 | [10 — Guide de démarrage](docs/10-guide-demarrage.md) | Compiler, lancer, brancher un LiDAR, outils d'évaluation |
 | [ADRs](docs/adr/) | Décisions d'architecture actées |
 
-## Organisation du dépôt (cible)
+> **Note** : `docs/01` à `docs/09` sont des **documents de conception** décrivant la cible
+> M0→M6. Ils ne décrivent pas l'état livré. Pour ce qui existe réellement :
+> [CHANGELOG](CHANGELOG.md) et [guide de démarrage](docs/10-guide-demarrage.md).
+
+## Organisation du dépôt
 
 ```
 sillage/
-├── engine/            # Cœur C++20 : acquisition, fusion, tracking, sorties, serveur API
-│   ├── src/
-│   ├── include/
-│   ├── drivers/       # Plugins capteurs (RPLIDAR, Hokuyo, SICK, replay, simulateur…)
-│   └── tests/
-├── ui/                # Interface web React + TypeScript + WebGL
-├── protocol/          # Schémas JSON partagés engine ↔ UI ↔ clients (source de vérité)
-├── simulator/         # Scénarios de test et générateur de vérité terrain
-├── datasets/          # Enregistrements réels de référence (Git LFS)
-├── tools/             # Outils de maintenance/debug (doctor, inspecteurs, harnais de charge)
-├── packaging/         # Installeurs Windows, .deb, .pkg macOS, services systemd/Windows/launchd
-└── docs/              # Ce dossier
+├── engine/
+│   ├── src/           # Cœur C++20 : pipeline, tracking, drivers, sorties, serveur HTTP/WS
+│   │   ├── drivers/   # Hokuyo (SCIP 2.2), SICK (CoLa A), pont UDP universel
+│   │   ├── eval/      # Scénarios MOT et métriques (portes de CI)
+│   │   └── sim/       # Simulateur de salle et d'agents
+│   └── tests/         # 68 tests (unitaires, intégration sockets, scénarios)
+├── ui/dev/            # Interface web : un fichier HTML autonome, sans build
+├── examples/          # Fichier projet d'exemple
+├── tools/bridges/     # Ponts capteurs (RPLIDAR → UDP)
+├── packaging/         # Installeur Inno Setup, service Windows, systemd, launchd, portable
+└── docs/              # Conception (01–09) + guide de démarrage (10)
 ```

@@ -117,9 +117,25 @@ réactif). Appliqués aux sorties uniquement, jamais au tracker.
 
 ## Lancer en service (24/7)
 
-Fichiers prêts dans [packaging/](../packaging/) : unité **systemd** (Ubuntu, durcie,
-redémarrage automatique), **launchd** (macOS), script d'installation **service Windows**
-avec recovery. `--http-bind 0.0.0.0` expose l'UI sur le LAN (tablette régie).
+**Windows** — depuis un PowerShell **administrateur** :
+
+```powershell
+.\packaging\windows\install-service.ps1 -BinaryPath "C:\Program Files\Sillage\sillage-engine.exe" -ConfigPath "C:\ProgramData\Sillage\project.json"
+```
+
+Le script enregistre le service avec le drapeau `--service` (le moteur devient alors un
+vrai service SCM), configure le redémarrage automatique en cas de panne, puis **vérifie**
+que le service tourne *et* que `GET /api/status` répond — sinon il échoue en affichant la
+commande enregistrée et où lire le journal d'événements. L'installeur propose la même
+opération via une case à cocher.
+
+**Ubuntu / macOS** — unité **systemd** durcie et **launchd** dans
+[packaging/](../packaging/).
+
+`--http-bind 0.0.0.0` expose l'interface sur le réseau local (tablette en régie).
+
+> ⚠️ L'API n'a pas d'authentification : n'exposez le moteur que sur un réseau de confiance
+> (VLAN régie), jamais directement sur Internet.
 
 ## Mode spectacle
 

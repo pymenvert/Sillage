@@ -1,5 +1,9 @@
 # 06 — Protocoles et intégrations
 
+> ⚠️ **Document de conception.** Il décrit la cible des jalons M0→M6, **pas**
+> l'état livré en v1.0.1. Pour ce qui existe réellement : [CHANGELOG](../CHANGELOG.md)
+> et [guide de démarrage](10-guide-demarrage.md).
+
 Stratégie ([ADR-004](adr/004-compatibilite-protocole-augmenta.md)) : **parler nativement le
 protocole Augmenta** en OSC et WebSocket. Tout l'écosystème existant (plugins TouchDesigner,
 Unity, Unreal, notch, vvvv, exemples communautaires) fonctionne alors avec Sillage sans

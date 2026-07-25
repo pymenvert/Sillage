@@ -47,10 +47,32 @@ jobs:
             /O"${{ github.workspace }}\dist" `
             packaging\windows\sillage.iss
 
+      # Checksums let a customer verify a download that is not code-signed yet.
+      - name: Checksums
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp build/${{ matrix.preset }}/sillage-*-portable-* dist/ 2>/dev/null || true
+          cd dist
+          if command -v sha256sum >/dev/null; then
+            sha256sum sillage-* > "SHA256SUMS-${{ matrix.preset }}.txt"
+          else
+            shasum -a 256 sillage-* > "SHA256SUMS-${{ matrix.preset }}.txt"
+          fi
+          cat "SHA256SUMS-${{ matrix.preset }}.txt"
+
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
+          # Only the Windows job produces an installer; listing it unconditionally
+          # made the other two jobs fail on a missing path.
           files: |
-            build/${{ matrix.preset }}/sillage-*-portable-*.zip
-            build/${{ matrix.preset }}/sillage-*-portable-*.tar.gz
-            dist/sillage-setup-*.exe
+            dist/sillage-*-portable-*
+            dist/SHA256SUMS-*.txt
+            ${{ runner.os == 'Windows' && 'dist/sillage-setup-*.exe' || '' }}
+          body: |
+            Voir le [CHANGELOG](https://github.com/pymenvert/Sillage/blob/main/CHANGELOG.md).
+
+            **Artefacts** : portable (zip/tar.gz) pour Windows, Linux et macOS (universel
+            arm64 + Intel), et installeur Windows en un fichier.
+            Les binaires ne sont pas encore signés — vérifiez les sommes `SHA256SUMS-*.txt`.

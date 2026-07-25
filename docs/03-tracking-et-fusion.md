@@ -1,5 +1,9 @@
 # 03 — Tracking et fusion : conception détaillée
 
+> ⚠️ **Document de conception.** Il décrit la cible des jalons M0→M6, **pas**
+> l'état livré en v1.0.1. Pour ce qui existe réellement : [CHANGELOG](../CHANGELOG.md)
+> et [guide de démarrage](10-guide-demarrage.md).
+
 C'est le cœur de la valeur du produit. Objectif formel : **minimiser les échanges d'ID
 (ID switches) et les fragmentations de trajectoires**, mesurés par les métriques MOT
 standard (IDF1, nombre d'ID switches, MOTA) sur une bibliothèque de scénarios — pas « ça a

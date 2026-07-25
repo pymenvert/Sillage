@@ -46,9 +46,13 @@ Name: "service"; Description: "Installer comme service Windows (démarrage autom
     Flags: unchecked
 
 [Run]
+; Not runhidden: if the service fails to install or start, the technician must
+; see it now rather than discover a dead service on show day. The script exits
+; non-zero on failure, which Inno surfaces to the user.
 Filename: "powershell.exe"; \
-    Parameters: "-ExecutionPolicy Bypass -File ""{app}\packaging\install-service.ps1"" -BinaryPath ""{app}\sillage-engine.exe"" -ConfigPath ""{commonappdata}\Sillage\project.json"""; \
-    StatusMsg: "Installation du service Windows..."; Tasks: service; Flags: runhidden
+    Parameters: "-ExecutionPolicy Bypass -NoProfile -File ""{app}\packaging\install-service.ps1"" -BinaryPath ""{app}\sillage-engine.exe"" -ConfigPath ""{commonappdata}\Sillage\project.json"""; \
+    StatusMsg: "Installation du service Windows..."; Tasks: service; \
+    Flags: waituntilterminated
 Filename: "{app}\run-sillage.bat"; Description: "Lancer Sillage maintenant"; \
     Flags: postinstall nowait skipifsilent unchecked
 

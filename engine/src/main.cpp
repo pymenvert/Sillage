@@ -9,6 +9,10 @@
 #include <filesystem>
 #include <string_view>
 
+#ifdef _WIN32
+#include <windows.h> // Windows service (SCM) entry point
+#endif
+
 namespace {
 
 sillage::Engine* g_engine = nullptr;
@@ -38,6 +42,9 @@ void printUsage() {
                 "  --record <file>      record raw scans to a .srec file\n"
                 "  --replay <file>      replay a .srec file instead of sensors\n"
                 "  --headless           no HTTP server\n"
+#ifdef _WIN32
+                "  --service            run under the Windows Service Control Manager\n"
+#endif
                 "  --eval               run the MOT scenario library and exit\n");
 }
 
@@ -65,9 +72,9 @@ int runEval() {
     return failed;
 }
 
-} // namespace
-
-int main(int argc, char** argv) {
+// The whole CLI + engine lifecycle. Called directly from main() in console
+// mode, and from ServiceMain() when running under the Windows SCM.
+int runEngine(int argc, char** argv) {
     sillage::EngineConfig config;
 
     // The dev UI sits next to the binary (copied at build time).
@@ -155,6 +162,10 @@ int main(int argc, char** argv) {
             }
             std::printf("config saved\n");
             return 0;
+        } else if (arg == "--service") {
+            // Consumed by main() on Windows to enter the SCM dispatcher; here
+            // it is simply not an error so the same command line works both
+            // ways (and is a no-op on other platforms).
         } else if (arg == "--headless") {
             config.headless = true;
         } else if (arg == "--eval") {
@@ -187,4 +198,100 @@ int main(int argc, char** argv) {
     std::signal(SIGTERM, handleSignal);
 
     return engine.run() ? 0 : 1;
+}
+
+#ifdef _WIN32
+
+// --- Windows service entry point ---------------------------------------------
+//
+// A console executable registered with New-Service never answers the Service
+// Control Manager, which kills it after 30 s with error 1053. Running 24/7 in
+// a venue means being a real service: register a dispatcher, report status
+// transitions, and stop the engine cleanly on SERVICE_CONTROL_STOP.
+
+SERVICE_STATUS_HANDLE g_serviceStatusHandle = nullptr;
+SERVICE_STATUS g_serviceStatus{};
+int g_serviceArgc = 0;
+char** g_serviceArgv = nullptr;
+
+void reportServiceStatus(DWORD state, DWORD waitHintMs = 0) {
+    g_serviceStatus.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
+    g_serviceStatus.dwCurrentState = state;
+    g_serviceStatus.dwControlsAccepted =
+        (state == SERVICE_START_PENDING) ? 0 : (SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN);
+    g_serviceStatus.dwWaitHint = waitHintMs;
+    // checkPoint must advance while a transition is pending, otherwise the SCM
+    // considers the service hung.
+    static DWORD checkPoint = 1;
+    g_serviceStatus.dwCheckPoint =
+        (state == SERVICE_RUNNING || state == SERVICE_STOPPED) ? 0 : checkPoint++;
+    if (g_serviceStatusHandle != nullptr) {
+        ::SetServiceStatus(g_serviceStatusHandle, &g_serviceStatus);
+    }
+}
+
+DWORD WINAPI serviceCtrlHandler(DWORD control, DWORD, LPVOID, LPVOID) {
+    switch (control) {
+    case SERVICE_CONTROL_STOP:
+    case SERVICE_CONTROL_SHUTDOWN:
+        // Generous hint: the engine joins driver threads and flushes outputs.
+        reportServiceStatus(SERVICE_STOP_PENDING, 10000);
+        if (g_engine != nullptr) {
+            g_engine->stop();
+        }
+        return NO_ERROR;
+    case SERVICE_CONTROL_INTERROGATE:
+        reportServiceStatus(g_serviceStatus.dwCurrentState);
+        return NO_ERROR;
+    default:
+        return ERROR_CALL_NOT_IMPLEMENTED;
+    }
+}
+
+void WINAPI serviceMain(DWORD, LPSTR*) {
+    g_serviceStatusHandle =
+        ::RegisterServiceCtrlHandlerExA("Sillage", serviceCtrlHandler, nullptr);
+    if (g_serviceStatusHandle == nullptr) {
+        return;
+    }
+    reportServiceStatus(SERVICE_START_PENDING, 30000);
+    reportServiceStatus(SERVICE_RUNNING);
+
+    // Runs the engine with the command line the service was registered with;
+    // the SCM's own argv carries the service name, not our flags.
+    const int rc = runEngine(g_serviceArgc, g_serviceArgv);
+
+    g_serviceStatus.dwWin32ExitCode = (rc == 0) ? NO_ERROR : ERROR_SERVICE_SPECIFIC_ERROR;
+    g_serviceStatus.dwServiceSpecificExitCode = static_cast<DWORD>(rc);
+    reportServiceStatus(SERVICE_STOPPED);
+}
+
+#endif // _WIN32
+
+} // namespace
+
+int main(int argc, char** argv) {
+#ifdef _WIN32
+    for (int i = 1; i < argc; ++i) {
+        if (std::string_view(argv[i]) == "--service") {
+            g_serviceArgc = argc;
+            g_serviceArgv = argv;
+            SERVICE_TABLE_ENTRYA table[] = {
+                {const_cast<char*>("Sillage"), serviceMain},
+                {nullptr, nullptr},
+            };
+            if (::StartServiceCtrlDispatcherA(table) == 0) {
+                // Started with --service outside the SCM (e.g. by hand): say so
+                // rather than failing silently.
+                std::fprintf(stderr,
+                             "error: --service is only valid when started by the Windows "
+                             "Service Control Manager (error %lu)\n",
+                             ::GetLastError());
+                return 1;
+            }
+            return 0;
+        }
+    }
+#endif
+    return runEngine(argc, argv);
 }

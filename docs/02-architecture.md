@@ -1,5 +1,9 @@
 # 02 — Architecture
 
+> ⚠️ **Document de conception.** Il décrit la cible des jalons M0→M6, **pas**
+> l'état livré en v1.0.1. Pour ce qui existe réellement : [CHANGELOG](../CHANGELOG.md)
+> et [guide de démarrage](10-guide-demarrage.md).
+
 ## Vue d'ensemble
 
 Un seul exécutable, `sillage-engine`, tourne en service (systemd sur Ubuntu, Windows Service)

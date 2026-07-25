@@ -1,5 +1,9 @@
 # 04 — Calibration multi-capteurs
 
+> ⚠️ **Document de conception.** Il décrit la cible des jalons M0→M6, **pas**
+> l'état livré en v1.0.1. Pour ce qui existe réellement : [CHANGELOG](../CHANGELOG.md)
+> et [guide de démarrage](10-guide-demarrage.md).
+
 La fusion au niveau des points exige des poses capteur précises (< 5 cm d'erreur dans les
 zones de recouvrement, sinon une personne vue par deux capteurs devient deux clusters).
 La calibration doit être **rapide sur site** (un installateur, pas un ingénieur) et sa
