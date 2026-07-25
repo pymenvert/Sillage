@@ -1,5 +1,28 @@
 # Changelog
 
+## Non publié — Prêt pour le spectacle et pour la vente
+
+### Spectacle vivant
+- **Dégradation par capteur** : chaque LiDAR apprend son fond indépendamment. Un capteur
+  absent ou en panne réduit la couverture au lieu d'arrêter tout le moteur.
+- **Réapprentissage du fond** à la demande (bouton + `POST /api/background/relearn`) —
+  indispensable quand le moteur a démarré avec du public déjà installé.
+- **Verrou show** : configuration en lecture seule pendant la représentation.
+- **Coupure d'urgence des sorties** : le tracking et l'écran continuent, plus rien n'est émis.
+- **Bandeau d'alarme** nommant la cause réelle (capteur hors ligne, sorties coupées, verrou),
+  lisible dans une salle sombre.
+- Régulation du tick : un dépassement ne fait plus s'emballer le moteur.
+
+### Exploitation
+- **Service Windows réel** : le moteur expose un point d'entrée SCM (`--service`). Le script
+  d'installation vérifie que le service démarre *et* répond, sinon il échoue explicitement.
+- **macOS universel** (Apple Silicon + Intel, cible 13.0), sommes SHA256 publiées avec chaque
+  release.
+
+### Documentation
+- README et docs alignés sur ce qui est **réellement livré**, avec une section explicite
+  « prévu, non livré » ; les documents de conception portent un bandeau sans ambiguïté.
+
 ## v1.0.1 — 2026-07-12 — Fiabilité et durcissement
 
 Passe de robustesse issue d'une revue de code approfondie. Aucun changement
