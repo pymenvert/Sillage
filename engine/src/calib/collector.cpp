@@ -5,6 +5,12 @@
 
 namespace sillage {
 
+CalibrationCollector::CalibrationCollector(size_t sensorCount)
+    : CalibrationCollector(sensorCount, Params{}) {}
+
+CalibrationCollector::CalibrationCollector(size_t sensorCount, Params params)
+    : params_(params), observations_(sensorCount) {}
+
 void CalibrationCollector::addObservation(SensorId sensor, uint64_t tick,
                                           const std::vector<Vec2>& localPoints) {
     if (sensor >= observations_.size() || localPoints.size() < params_.minPointsPerObs) {

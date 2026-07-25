@@ -29,10 +29,12 @@ public:
         float ransacThreshold = 0.10f;
     };
 
-    // Note: spelled `Params{}` rather than `{}` — GCC rejects a braced default
-    // argument for an aggregate carrying default member initializers.
-    explicit CalibrationCollector(size_t sensorCount, Params params = Params{})
-        : params_(params), observations_(sensorCount) {}
+    // Declared here, defined in the .cpp: Params is a nested type, so its
+    // default member initializers are not usable inside the enclosing class
+    // definition (the class is still incomplete there) — MSVC tolerates it,
+    // GCC and Clang correctly reject it.
+    explicit CalibrationCollector(size_t sensorCount);
+    CalibrationCollector(size_t sensorCount, Params params);
 
     // Feed the walker's foreground points seen by one sensor at one tick,
     // in the SENSOR-LOCAL cartesian frame. Ignores ambiguous ticks.

@@ -1,9 +1,10 @@
 #include "core/json.h"
 
 #include <cctype>
-#include <charconv>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 
 namespace sillage::json {
 
@@ -115,10 +116,15 @@ private:
                 text_[pos_] == '-')) {
             ++pos_;
         }
-        double value = 0.0;
-        const auto [ptr, ec] =
-            std::from_chars(text_.data() + start, text_.data() + pos_, value);
-        if (ec != std::errc{} || ptr != text_.data() + pos_ || pos_ == start) {
+        // strtod rather than std::from_chars: libc++ (Apple Clang) still ships
+        // no floating-point from_chars. The engine never calls setlocale, so
+        // the C locale applies and '.' stays the decimal separator, as JSON
+        // requires. text_ is a std::string, hence NUL-terminated for strtod.
+        // Requiring the parse to end exactly at pos_ also rejects the forms
+        // strtod would otherwise accept but JSON forbids (hex, inf, nan).
+        char* end = nullptr;
+        const double value = std::strtod(text_.c_str() + start, &end);
+        if (pos_ == start || end != text_.c_str() + pos_) {
             fail("invalid number");
             return std::nullopt;
         }
