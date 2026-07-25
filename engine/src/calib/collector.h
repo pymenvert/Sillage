@@ -29,7 +29,9 @@ public:
         float ransacThreshold = 0.10f;
     };
 
-    explicit CalibrationCollector(size_t sensorCount, Params params = {})
+    // Note: spelled `Params{}` rather than `{}` — GCC rejects a braced default
+    // argument for an aggregate carrying default member initializers.
+    explicit CalibrationCollector(size_t sensorCount, Params params = Params{})
         : params_(params), observations_(sensorCount) {}
 
     // Feed the walker's foreground points seen by one sensor at one tick,
