@@ -121,6 +121,25 @@ Fichiers prêts dans [packaging/](../packaging/) : unité **systemd** (Ubuntu, d
 redémarrage automatique), **launchd** (macOS), script d'installation **service Windows**
 avec recovery. `--http-bind 0.0.0.0` expose l'UI sur le LAN (tablette régie).
 
+## Mode spectacle
+
+Trois commandes conçues pour être utilisées sous pression, dans le noir — barre en bas
+de l'interface, ou API pour un pupitre externe :
+
+| Action | Effet | API |
+|---|---|---|
+| 🔒 **Verrou show** | La configuration passe en lecture seule : plus aucune modification possible (ni clic, ni POST). Le tracking continue normalement. | `POST /api/show/lock` · `/unlock` |
+| ⏹ **Couper les sorties** | Coupure d'urgence : OSC, TUIO et ADM cessent instantanément. Le tracking et l'interface continuent, pour garder l'œil sur la salle. | `POST /api/show/mute` · `/unmute` |
+| ↻ **Réapprendre le fond** | Réapprend le décor. **La salle doit être vide** (~1 s). Indispensable si le moteur a démarré avec du public déjà installé. | `POST /api/background/relearn` |
+
+**Bandeau d'alarme** : un capteur hors ligne, tous les capteurs perdus, les sorties
+coupées ou le verrou actif s'affichent en pleine largeur, en haut, en contraste fort —
+avec la cause réelle nommée (un capteur débranché n'est plus confondu avec « salle vide »).
+
+**Dégradation par capteur** : chaque capteur apprend son fond indépendamment. Un LiDAR
+absent, en panne ou lent à démarrer ne bloque plus le moteur — les autres continuent de
+tracker, et le bandeau signale la couverture réduite.
+
 ## Enregistrer et rejouer (boîte noire)
 
 ```bash

@@ -21,6 +21,10 @@ public:
     bool learn(const ScanFrame& frame);
     bool learning() const { return framesSeen_ < learnFrames_; }
 
+    // Forgets the learned background so the next frames rebuild it from
+    // scratch (operator-triggered re-learn once the room is actually empty).
+    void reset();
+
     // True if this point is in front of the background by more than the margin.
     bool isForeground(RangePoint p) const;
 

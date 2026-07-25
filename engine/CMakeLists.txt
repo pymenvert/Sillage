@@ -76,6 +76,7 @@ if(BUILD_TESTING)
         tests/hokuyo_test.cpp
         tests/metrics_test.cpp
         tests/osc_test.cpp
+        tests/pipeline_test.cpp
         tests/recorder_test.cpp
         tests/scenarios_test.cpp
         tests/tracker_test.cpp

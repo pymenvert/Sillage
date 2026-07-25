@@ -99,8 +99,18 @@ private:
     ProjectConfig project_;
     std::optional<ProjectConfig> pendingConfig_;
 
+    // Show mode (docs/11): while armed, the configuration is read-only so a
+    // stray click or an errant POST cannot alter zones or outputs during a
+    // performance. `muted` is the panic switch: the engine keeps tracking and
+    // the UI keeps updating, but nothing is emitted downstream.
+    std::atomic<bool> showLocked_{false};
+    std::atomic<bool> outputsMuted_{false};
+
     // Load stats, published on /api/status and the WS health payload.
     mutable std::mutex statsMutex_;
+    uint64_t overruns_ = 0;
+    uint32_t sensorsDown_ = 0;  // hardware drivers reporting disconnected
+    uint32_t sensorsTotal_ = 0; // hardware drivers configured
     float tickMsAvg_ = 0.0f;
     float tickMsMax_ = 0.0f;
     uint32_t tracksNow_ = 0;

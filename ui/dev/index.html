@@ -91,6 +91,31 @@
   .field input[type="text"], .field input[type="number"] { width: 110px; padding: 4px 8px; font-size: 12px; }
   .field input[type="number"].short { width: 62px; }
 
+  /* Alarm strip: full width, high contrast, readable across a dark venue.
+     It is the one thing an operator must notice without looking for it. */
+  #alarm {
+    position: absolute; top: 0; left: 0; right: 0;
+    padding: 14px 20px; z-index: 30; display: none;
+    font-size: 17px; font-weight: 700; letter-spacing: 0.06em;
+    text-align: center; text-transform: uppercase;
+    color: #1a0000; background: var(--bad);
+    box-shadow: 0 4px 24px rgba(255, 93, 115, 0.4);
+    animation: alarmPulse 1.6s ease-in-out infinite;
+  }
+  #alarm.warn { color: #241800; background: var(--warn);
+                box-shadow: 0 4px 24px rgba(255, 179, 71, 0.35); }
+  #alarm.info { color: #002028; background: var(--accent); animation: none;
+                box-shadow: 0 4px 24px rgba(56, 225, 255, 0.3); }
+  @keyframes alarmPulse { 50% { filter: brightness(1.25); } }
+
+  #showbar {
+    position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 8px; padding: 8px 10px; z-index: 15;
+  }
+  #showbar button { font-weight: 600; letter-spacing: 0.03em; }
+  #btn-lock.on { background: var(--warn); color: #241800; border-color: var(--warn); }
+  #btn-mute.on { background: var(--bad); color: #1a0000; border-color: var(--bad); }
+
   #learn-banner, #toast {
     position: absolute; left: 50%; transform: translateX(-50%);
     padding: 12px 24px; z-index: 20; font-size: 13.5px; letter-spacing: 0.03em;
@@ -163,6 +188,14 @@
     <button id="c-apply" style="width:100%;margin-top:8px">Appliquer</button>
   </section>
 </aside>
+
+<div id="alarm"></div>
+
+<div id="showbar" class="glass">
+  <button id="btn-lock" title="Verrouille la configuration : plus aucune modification possible pendant le show">🔒 Verrou show</button>
+  <button id="btn-mute" title="Coupe instantanément toutes les sorties (le tracking continue)">⏹ Couper les sorties</button>
+  <button id="btn-relearn" title="Réapprend le fond — la salle doit être vide">↻ Réapprendre le fond</button>
+</div>
 
 <div id="learn-banner" class="glass">Apprentissage du fond — salle vide…</div>
 <div id="toast" class="glass"></div>
@@ -269,6 +302,11 @@ async function finishZone() {
   setMode("nav");
 }
 async function deleteZone(name) {
+  if (!cfg) return;
+  if (!confirm(`Supprimer la zone « ${name} » ?`)) return;
+  // Re-read the authoritative config first: the panel may be stale, and a
+  // blind write-back would silently revert someone else's change.
+  await loadConfig();
   if (!cfg) return;
   cfg.zones = (cfg.zones || []).filter((z) => z.name !== name);
   await pushConfig();
@@ -398,6 +436,7 @@ function updatePanels() {
   if (frame.health) {
     el("h-tick").textContent = frame.health.tickMs.toFixed(1);
     el("learn-banner").style.display = frame.health.learning ? "block" : "none";
+    updateAlarm(frame.health);
   }
   drawSpark();
   if (frame.zones && frame.zones.length > 0) {
@@ -429,6 +468,56 @@ function updatePanels() {
                `<span class="grow">#${t.id}</span><span class="dim">${state}</span></div>`;
       }).join("");
 }
+// One unambiguous line, ranked by severity, naming the actual problem rather
+// than a symptom — "learning" used to be shown for an unplugged sensor, which
+// sent the technician looking at the room instead of the cable.
+function updateAlarm(h) {
+  const a = el("alarm");
+  let msg = null, cls = "";
+  if (h.muted) {
+    msg = "⏹ SORTIES COUPÉES — rien n'est envoyé au spectacle"; cls = "";
+  } else if (h.sensorsTotal > 0 && h.sensorsDown >= h.sensorsTotal) {
+    msg = `⚠ TOUS LES CAPTEURS HORS LIGNE (${h.sensorsDown}/${h.sensorsTotal})`; cls = "";
+  } else if (h.sensorsDown > 0) {
+    msg = `⚠ CAPTEUR HORS LIGNE — ${h.sensorsDown}/${h.sensorsTotal} · couverture réduite`;
+    cls = "warn";
+  } else if (h.learning) {
+    msg = "APPRENTISSAGE DU FOND — la salle doit être vide"; cls = "info";
+  } else if (h.locked) {
+    msg = "🔒 VERROU SHOW ACTIF — configuration en lecture seule"; cls = "info";
+  }
+  a.className = cls;
+  a.textContent = msg || "";
+  a.style.display = msg ? "block" : "none";
+  el("btn-lock").classList.toggle("on", !!h.locked);
+  el("btn-mute").classList.toggle("on", !!h.muted);
+  el("btn-lock").textContent = h.locked ? "🔓 Déverrouiller" : "🔒 Verrou show";
+  el("btn-mute").textContent = h.muted ? "▶ Rétablir les sorties" : "⏹ Couper les sorties";
+}
+
+async function showAction(path) {
+  try {
+    const r = await (await fetch(path, { method: "POST" })).json();
+    if (!r.ok) toast("Erreur : " + esc(r.error || ""), false);
+    return r.ok;
+  } catch { toast("Moteur injoignable", false); return false; }
+}
+el("btn-lock").onclick = async () => {
+  const locked = frame && frame.health && frame.health.locked;
+  await showAction(locked ? "/api/show/unlock" : "/api/show/lock");
+  toast(locked ? "Configuration déverrouillée" : "Configuration verrouillée pour le show", true);
+};
+el("btn-mute").onclick = async () => {
+  const muted = frame && frame.health && frame.health.muted;
+  await showAction(muted ? "/api/show/unmute" : "/api/show/mute");
+};
+el("btn-relearn").onclick = async () => {
+  if (!confirm("Réapprendre le fond ?\n\nLa salle doit être VIDE pendant environ 1 seconde.\nToute personne présente deviendra invisible au tracking.")) return;
+  if (await showAction("/api/background/relearn")) {
+    toast("Réapprentissage en cours — laissez la salle vide", true);
+  }
+};
+
 function updateSensors() {
   if (!status) return;
   el("sensorlist").innerHTML = status.sensors.map((s) => {

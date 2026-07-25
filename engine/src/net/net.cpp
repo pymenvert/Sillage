@@ -96,7 +96,7 @@ bool UdpSender::send(const void* data, size_t size) {
         ::sendto(toNative(socket_), static_cast<const char*>(data), static_cast<int>(size), 0,
                  reinterpret_cast<const sockaddr*>(destAddr_.data()),
                  static_cast<socklen_type>(destAddr_.size()));
-    return sent == static_cast<decltype(sent)>(size);
+    return sent >= 0 && static_cast<size_t>(sent) == size;
 }
 
 void UdpSender::close() {

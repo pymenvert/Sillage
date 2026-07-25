@@ -259,17 +259,24 @@ bool Engine::run() {
         if (!pipeline_.learning()) {
             // Published copy: conditioning applies to outputs, never to state.
             snap.tracks = conditioner_.apply(snap.tracks, dt);
-            if (config_.oscEnabled) {
-                osc_.publish(snap);
-            }
-            if (config_.tuioEnabled) {
-                tuio_.publish(snap);
-            }
-            if (config_.admEnabled) {
-                adm_.publish(snap);
-            }
-            for (const ZoneEvent& event : zoneEngine_.update(snap.tracks)) {
+            // Panic mute: tracking and the UI keep running so the operator can
+            // still see what is happening, but nothing reaches the show.
+            const bool muted = outputsMuted_.load();
+            if (!muted) {
                 if (config_.oscEnabled) {
+                    osc_.publish(snap);
+                }
+                if (config_.tuioEnabled) {
+                    tuio_.publish(snap);
+                }
+                if (config_.admEnabled) {
+                    adm_.publish(snap);
+                }
+            }
+            // Zone bookkeeping runs either way so occupancy stays truthful and
+            // the UI keeps its event feed; only the emission is suppressed.
+            for (const ZoneEvent& event : zoneEngine_.update(snap.tracks)) {
+                if (!muted && config_.oscEnabled) {
                     osc::Message msg("/sillage/zone/" + osc::sanitizeAddressPart(event.zone) +
                                      "/" +
                                      (event.type == ZoneEvent::Type::Enter ? "enter" : "exit"));
@@ -289,6 +296,16 @@ bool Engine::run() {
             tickMsMax_ = std::max(tickMsMax_ * 0.999f, tickMs); // decaying peak
             tracksNow_ = static_cast<uint32_t>(snap.tracks.size());
             learning_ = pipeline_.learning();
+            // Sensor health lands in every WS frame (not just the 2 s /api/status
+            // poll) so the UI can raise an alarm the operator sees immediately.
+            sensorsTotal_ = static_cast<uint32_t>(drivers_.size());
+            uint32_t down = 0;
+            for (const auto& driver : drivers_) {
+                if (!driver->health().connected) {
+                    ++down;
+                }
+            }
+            sensorsDown_ = down;
         }
 
         if (!config_.headless && tick % 2 == 0) { // UI at ~30 Hz
@@ -300,6 +317,17 @@ bool Engine::run() {
             break;
         }
         nextTick += tickPeriod;
+        // Catch-up clamp: after an overrun (a stalled disk write, a laptop
+        // resuming from sleep, an OS hiccup) nextTick can sit far in the past.
+        // Without this the loop would run flat out with no sleep, burning a
+        // core and flooding every OSC destination with a burst of frames.
+        // Dropping the backlog keeps real-time pacing; we never replay history.
+        const auto now = Clock::now();
+        if (nextTick < now) {
+            nextTick = now + tickPeriod;
+            std::lock_guard lock(statsMutex_);
+            ++overruns_;
+        }
         std::this_thread::sleep_until(nextTick);
     }
     for (auto& driver : drivers_) {
@@ -318,15 +346,52 @@ std::string Engine::handleApi(const std::string& method, const std::string& path
         std::lock_guard lock(configMutex_);
         return project_.toJson().serialize(2);
     }
+    // Show controls. Deliberately tiny and always available — these are the
+    // buttons an operator hits under pressure, in the dark.
+    if (method == "POST" && path == "/api/show/lock") {
+        showLocked_ = true;
+        return "{\"ok\":true,\"showLocked\":true}";
+    }
+    if (method == "POST" && path == "/api/show/unlock") {
+        showLocked_ = false;
+        return "{\"ok\":true,\"showLocked\":false}";
+    }
+    if (method == "POST" && path == "/api/show/mute") {
+        outputsMuted_ = true;
+        return "{\"ok\":true,\"muted\":true}";
+    }
+    if (method == "POST" && path == "/api/show/unmute") {
+        outputsMuted_ = false;
+        return "{\"ok\":true,\"muted\":false}";
+    }
+    if (method == "POST" && path == "/api/background/relearn") {
+        if (showLocked_.load()) {
+            return "{\"ok\":false,\"error\":\"show lock active\"}";
+        }
+        pipeline_.relearnBackground();
+        return "{\"ok\":true,\"relearning\":true}";
+    }
+
     if (method == "POST" && path == "/api/config") {
+        if (showLocked_.load()) {
+            return "{\"ok\":false,\"error\":\"show lock active: configuration is read-only\"}";
+        }
         const auto parsed = json::parse(body);
         if (!parsed.value) {
-            return "{\"ok\":false,\"error\":\"invalid JSON: " + parsed.error + "\"}";
+            // The parser error is embedded in a JSON string, so escape it —
+            // a quote in the message would otherwise emit invalid JSON.
+            std::string out = "{\"ok\":false,\"error\":";
+            appendJsonString(out, "invalid JSON: " + parsed.error);
+            return out + "}";
         }
         std::string error;
         auto incoming = ProjectConfig::fromJson(*parsed.value, error);
         if (!incoming) {
-            return "{\"ok\":false,\"error\":\"" + error + "\"}";
+            {
+                std::string out = "{\"ok\":false,\"error\":";
+                appendJsonString(out, error);
+                return out + "}";
+            }
         }
         std::lock_guard lock(configMutex_);
         // Zones, outputs and conditioning hot-apply at the next tick; sensor
@@ -356,7 +421,11 @@ std::string Engine::handleApi(const std::string& method, const std::string& path
         if (!config_.projectPath.empty()) {
             std::string saveError;
             if (!incoming->save(config_.projectPath, saveError)) {
-                return "{\"ok\":false,\"error\":\"" + saveError + "\"}";
+                {
+                std::string out = "{\"ok\":false,\"error\":";
+                appendJsonString(out, saveError);
+                return out + "}";
+            }
             }
         }
         pendingConfig_ = std::move(*incoming);
@@ -487,8 +556,13 @@ std::string Engine::snapshotToJson(const FrameSnapshot& snap) {
     // Lightweight health strip for the UI header (full detail on /api/status).
     {
         std::lock_guard lock(statsMutex_);
-        std::snprintf(buf, sizeof(buf), ",\"health\":{\"tickMs\":%.2f,\"learning\":%s}",
-                      static_cast<double>(tickMsAvg_), learning_ ? "true" : "false");
+        std::snprintf(buf, sizeof(buf),
+                      ",\"health\":{\"tickMs\":%.2f,\"learning\":%s,\"locked\":%s,"
+                      "\"muted\":%s,\"overruns\":%llu,\"sensorsDown\":%u,\"sensorsTotal\":%u}",
+                      static_cast<double>(tickMsAvg_), learning_ ? "true" : "false",
+                      showLocked_.load() ? "true" : "false",
+                      outputsMuted_.load() ? "true" : "false",
+                      static_cast<unsigned long long>(overruns_), sensorsDown_, sensorsTotal_);
         out += buf;
     }
 

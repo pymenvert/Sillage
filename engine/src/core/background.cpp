@@ -23,6 +23,11 @@ uint32_t BackgroundModel::binOf(float angle) const {
     return std::min(bin, static_cast<uint32_t>(minRange_.size() - 1));
 }
 
+void BackgroundModel::reset() {
+    std::fill(minRange_.begin(), minRange_.end(), std::numeric_limits<float>::infinity());
+    framesSeen_ = 0;
+}
+
 bool BackgroundModel::learn(const ScanFrame& frame) {
     if (!learning()) {
         return false;
