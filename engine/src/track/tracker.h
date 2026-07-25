@@ -3,6 +3,7 @@
 #include "core/types.h"
 #include "track/kalman.h"
 
+#include <cstdint>
 #include <vector>
 
 namespace sillage {

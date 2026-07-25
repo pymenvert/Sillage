@@ -3,6 +3,7 @@
 #include "core/json.h"
 #include "core/types.h"
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>

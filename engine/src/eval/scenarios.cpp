@@ -3,6 +3,7 @@
 #include "pipeline/pipeline.h"
 
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <map>
 #include <set>

@@ -5,6 +5,7 @@
 #include "net/net.h"
 
 #include <atomic>
+#include <cstdint>
 #include <mutex>
 #include <thread>
 

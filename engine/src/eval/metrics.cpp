@@ -3,6 +3,7 @@
 #include "track/tracker.h" // solveAssignment
 
 #include <algorithm>
+#include <cstdint>
 #include <set>
 
 namespace sillage {

@@ -1,6 +1,7 @@
 #include "pipeline/pipeline.h"
 
 #include <algorithm>
+#include <cstdint>
 
 namespace sillage {
 

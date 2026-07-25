@@ -3,6 +3,7 @@
 #include "config/project.h"
 #include "core/types.h"
 
+#include <cstdint>
 #include <map>
 #include <string>
 #include <vector>

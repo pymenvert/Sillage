@@ -3,6 +3,7 @@
 #include "core/types.h"
 #include "net/net.h"
 
+#include <cstdint>
 #include <string>
 #include <unordered_set>
 

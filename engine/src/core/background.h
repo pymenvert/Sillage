@@ -2,6 +2,7 @@
 
 #include "core/types.h"
 
+#include <cstdint>
 #include <vector>
 
 namespace sillage {

@@ -21,17 +21,54 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Each step tees its output to a log and, on failure, republishes the
+      # tail as ::error:: workflow commands. Those surface as check-run
+      # annotations, so a failure is diagnosable from the run summary (and the
+      # API) without downloading the raw log archive.
       - name: Configure
-        run: cmake --preset ${{ matrix.preset }}
+        shell: bash
+        run: |
+          set -o pipefail
+          cmake --preset ${{ matrix.preset }} 2>&1 | tee configure.log || {
+            echo "::error::Configure failed on ${{ matrix.os }}"
+            tail -n 40 configure.log | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }
 
       - name: Build
-        run: cmake --build --preset ${{ matrix.preset }}
+        shell: bash
+        run: |
+          set -o pipefail
+          cmake --build --preset ${{ matrix.preset }} 2>&1 | tee build.log || {
+            echo "::error::Build failed on ${{ matrix.os }}"
+            grep -iE "error:|error [A-Z]+[0-9]+|fatal" build.log | head -n 30 \
+              | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          }
 
       - name: Test
-        run: ctest --preset ${{ matrix.preset }}
+        shell: bash
+        run: |
+          set -o pipefail
+          ctest --preset ${{ matrix.preset }} 2>&1 | tee test.log || {
+            echo "::error::Tests failed on ${{ matrix.os }}"
+            grep -E "Failed|\*\*\*" test.log | head -n 30 \
+              | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          }
 
       - name: Smoke run (300 ticks, headless)
         shell: bash
         run: |
           bin=$(find build -type f \( -name "sillage-engine" -o -name "sillage-engine.exe" \) | head -1)
           "$bin" --ticks 300 --headless
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.preset }}
+          path: "*.log"
+          retention-days: 7

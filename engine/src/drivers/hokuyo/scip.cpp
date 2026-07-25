@@ -1,5 +1,6 @@
 #include "drivers/hokuyo/scip.h"
 
+#include <cstdint>
 #include <cstdio>
 
 namespace sillage::scip {

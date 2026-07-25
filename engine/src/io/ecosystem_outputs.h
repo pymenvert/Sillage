@@ -4,6 +4,7 @@
 #include "io/osc.h"
 #include "net/net.h"
 
+#include <cstdint>
 #include <map>
 #include <string>
 #include <vector>

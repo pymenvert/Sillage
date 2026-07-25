@@ -1,5 +1,6 @@
 #include "config/project.h"
 
+#include <cstdint>
 #include <fstream>
 #include <sstream>
 

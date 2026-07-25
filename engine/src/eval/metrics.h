@@ -2,6 +2,7 @@
 
 #include "core/types.h"
 
+#include <cstdint>
 #include <map>
 #include <set>
 #include <vector>

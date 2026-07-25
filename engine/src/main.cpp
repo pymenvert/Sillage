@@ -2,6 +2,7 @@
 #include "eval/scenarios.h"
 
 #include <csignal>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>

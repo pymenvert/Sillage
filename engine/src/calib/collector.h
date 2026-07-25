@@ -3,6 +3,7 @@
 #include "calib/rigid2d.h"
 #include "core/types.h"
 
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <string>

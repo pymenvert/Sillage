@@ -1,5 +1,6 @@
 #include "drivers/sick/cola.h"
 
+#include <cstdint>
 #include <cstdio>
 #include <numbers>
 #include <sstream>

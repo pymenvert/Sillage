@@ -1,5 +1,7 @@
 #include "logic/zones.h"
 
+#include <cstdint>
+
 namespace sillage {
 
 bool ZoneEngine::pointInPolygon(Vec2 p, const std::vector<Vec2>& polygon) {

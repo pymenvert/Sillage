@@ -2,6 +2,7 @@
 
 #include "core/types.h"
 
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <optional>

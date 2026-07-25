@@ -1,6 +1,7 @@
 #include "io/osc.h"
 
 #include <bit>
+#include <cstdint>
 #include <cstring>
 
 namespace sillage::osc {

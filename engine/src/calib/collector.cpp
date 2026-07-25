@@ -1,6 +1,7 @@
 #include "calib/collector.h"
 
 #include <cmath>
+#include <cstdint>
 
 namespace sillage {
 

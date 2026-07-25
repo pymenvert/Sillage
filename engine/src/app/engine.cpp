@@ -1,6 +1,7 @@
 #include "app/engine.h"
 
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <thread>
 #include <utility>

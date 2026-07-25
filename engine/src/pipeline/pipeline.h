@@ -5,6 +5,7 @@
 #include "detect/clustering.h"
 #include "track/tracker.h"
 
+#include <cstdint>
 #include <vector>
 
 namespace sillage {

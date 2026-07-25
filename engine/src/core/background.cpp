@@ -1,6 +1,7 @@
 #include "core/background.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <limits>
 #include <numbers>
 

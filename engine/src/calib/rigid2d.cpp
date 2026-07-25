@@ -1,6 +1,7 @@
 #include "calib/rigid2d.h"
 
 #include <cmath>
+#include <cstdint>
 #include <random>
 
 namespace sillage {

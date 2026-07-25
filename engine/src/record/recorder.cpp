@@ -1,5 +1,6 @@
 #include "record/recorder.h"
 
+#include <cstdint>
 #include <cstring>
 
 namespace sillage {

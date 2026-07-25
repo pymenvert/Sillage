@@ -2,6 +2,7 @@
 
 #include "core/types.h"
 
+#include <cstdint>
 #include <optional>
 #include <random>
 #include <vector>

@@ -3,6 +3,7 @@
 #include "core/json.h"
 
 #include <chrono>
+#include <cstdint>
 #include <vector>
 
 namespace sillage {

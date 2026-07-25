@@ -1,6 +1,7 @@
 #include "drivers/hokuyo/hokuyo_driver.h"
 
 #include <chrono>
+#include <cstdint>
 
 namespace sillage {
 

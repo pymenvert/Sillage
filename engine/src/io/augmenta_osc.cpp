@@ -3,6 +3,7 @@
 #include "io/osc.h"
 
 #include <algorithm>
+#include <cstdint>
 
 namespace sillage {
 

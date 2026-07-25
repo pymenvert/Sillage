@@ -1,5 +1,6 @@
 #include "net/net.h"
 
+#include <cstdint>
 #include <cstring>
 #include <mutex>
 
