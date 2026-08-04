@@ -37,7 +37,11 @@ json::Value ProjectConfig::toJson() const {
         o["port"] = json::Value(static_cast<double>(s.port));
         o["position"] = vec2Json(s.pose.position);
         o["theta"] = json::Value(static_cast<double>(s.pose.theta));
-        sensorArr.push_back(json::Value(std::move(o)));
+        // emplace_back, not push_back(Value(...)): constructing the Value in
+        // place avoids a temporary whose variant GCC 13 cannot prove
+        // initialized, which -Werror=maybe-uninitialized turns into a hard
+        // build failure (see engine/CMakeLists.txt for the warning flags).
+        sensorArr.emplace_back(std::move(o));
     }
     root["sensors"] = json::Value(std::move(sensorArr));
 
@@ -50,7 +54,7 @@ json::Value ProjectConfig::toJson() const {
             poly.push_back(vec2Json(p));
         }
         o["polygon"] = json::Value(std::move(poly));
-        zoneArr.push_back(json::Value(std::move(o)));
+        zoneArr.emplace_back(std::move(o));
     }
     root["zones"] = json::Value(std::move(zoneArr));
 

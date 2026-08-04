@@ -15,6 +15,11 @@ jobs:
             preset: windows-msvc
           - os: ubuntu-22.04
             preset: linux
+          # The README promises "Ubuntu 22.04+". Pinning only 22.04 (GCC 11)
+          # let a GCC 13 -Werror failure ship unnoticed, so both LTS releases
+          # in support are built.
+          - os: ubuntu-24.04
+            preset: linux
           - os: macos-15
             preset: macos
     runs-on: ${{ matrix.os }}
@@ -69,6 +74,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: logs-${{ matrix.preset }}
+          name: logs-${{ matrix.os }}-${{ matrix.preset }}
           path: "*.log"
           retention-days: 7
