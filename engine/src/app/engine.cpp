@@ -368,7 +368,9 @@ std::string Engine::handleApi(const std::string& method, const std::string& path
         if (showLocked_.load()) {
             return "{\"ok\":false,\"error\":\"show lock active\"}";
         }
-        pipeline_.relearnBackground();
+        // Deferred to the tick thread: this runs on a connection thread, and
+        // the background models are read concurrently by the tick.
+        pipeline_.requestRelearn();
         return "{\"ok\":true,\"relearning\":true}";
     }
 

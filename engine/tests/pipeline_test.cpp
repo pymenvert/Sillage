@@ -77,16 +77,59 @@ TEST(Pipeline, RelearnBackgroundRebuildsFromScratch) {
     const auto baked = pipeline.process({wallScan(0, 4.0f, true)}, kDt, 10, room);
     EXPECT_TRUE(baked.foreground.empty()) << "person baked into background: invisible";
 
-    pipeline.relearnBackground();
+    pipeline.requestRelearn();
+    pipeline.process({wallScan(0, 4.0f)}, kDt, 11, room);
     EXPECT_TRUE(pipeline.learning()) << "relearn must reopen the learning phase";
 
     // Re-learn on an empty room, then the person is visible again.
-    for (uint64_t tick = 11; tick < 21; ++tick) {
+    for (uint64_t tick = 12; tick < 21; ++tick) {
         pipeline.process({wallScan(0, 4.0f)}, kDt, tick, room);
     }
     ASSERT_FALSE(pipeline.learning());
     const auto after = pipeline.process({wallScan(0, 4.0f, true)}, kDt, 21, room);
     EXPECT_FALSE(after.foreground.empty()) << "person must be detected after re-learn";
+}
+
+// POST /api/background/relearn arrives on a connection thread while the tick
+// thread is reading the background models. The request must therefore only be
+// recorded, and acted on at the top of the next process() — never applied
+// underneath a running tick.
+TEST(Pipeline, RelearnRequestIsAppliedAtTheNextTickOnly) {
+    Pipeline pipeline(twoSensorConfig());
+    const Vec2 room{10.0f, 8.0f};
+
+    for (uint64_t tick = 0; tick < 10; ++tick) {
+        pipeline.process({wallScan(0, 4.0f)}, kDt, tick, room);
+    }
+    ASSERT_FALSE(pipeline.learning());
+
+    pipeline.requestRelearn();
+    EXPECT_FALSE(pipeline.learning()) << "the request alone must not touch the models";
+
+    pipeline.process({wallScan(0, 4.0f)}, kDt, 10, room);
+    EXPECT_TRUE(pipeline.learning()) << "the next tick consumes the request";
+}
+
+// A double-click on the re-learn button must cost one reset, not two: the
+// second must not reopen a learning phase that the first already completed.
+TEST(Pipeline, RepeatedRelearnRequestsCollapseIntoOne) {
+    Pipeline pipeline(twoSensorConfig());
+    const Vec2 room{10.0f, 8.0f};
+
+    for (uint64_t tick = 0; tick < 10; ++tick) {
+        pipeline.process({wallScan(0, 4.0f)}, kDt, tick, room);
+    }
+    ASSERT_FALSE(pipeline.learning());
+
+    // Exactly backgroundLearnFrames ticks: just enough for one learning cycle,
+    // so a second reset consumed on any of them would leave the sensor short
+    // of a frame and still learning.
+    pipeline.requestRelearn();
+    pipeline.requestRelearn();
+    for (uint64_t tick = 10; tick < 15; ++tick) {
+        pipeline.process({wallScan(0, 4.0f)}, kDt, tick, room);
+    }
+    EXPECT_FALSE(pipeline.learning()) << "a second reset would have reopened learning";
 }
 
 } // namespace

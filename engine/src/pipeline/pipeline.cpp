@@ -23,7 +23,11 @@ bool Pipeline::sensorLearning(SensorId sensor) const {
     return sensor < backgrounds_.size() && backgrounds_[sensor].learning();
 }
 
-void Pipeline::relearnBackground() {
+void Pipeline::requestRelearn() {
+    relearnRequested_.store(true);
+}
+
+void Pipeline::resetBackgrounds() {
     for (BackgroundModel& b : backgrounds_) {
         b.reset();
     }
@@ -35,6 +39,13 @@ FrameSnapshot Pipeline::process(const std::vector<ScanFrame>& frames, float dt, 
     snap.tick = tick;
     snap.timeSeconds = static_cast<double>(tick) * static_cast<double>(dt);
     snap.roomSize = roomSize;
+
+    // Consume a pending relearn before anything reads the models, so this tick
+    // already learns on the frames it was handed. exchange() also collapses a
+    // double-click into a single reset.
+    if (relearnRequested_.exchange(false)) {
+        resetBackgrounds();
+    }
 
     // Per-sensor gating: each sensor learns on its own frames and starts
     // contributing as soon as it is ready. A sensor that is still learning (or
