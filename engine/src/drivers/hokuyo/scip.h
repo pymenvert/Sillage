@@ -41,11 +41,19 @@ struct Frame {
 std::optional<Frame> parseMDBlock(const std::vector<std::string>& lines);
 
 // Sensor geometry (UST-10LX/20LX defaults: 1081 steps over 270°, front=540).
+//
+// The resolution must match the step range, or every point lands at the wrong
+// bearing. A UST divides the full turn into 1440 steps (0.25°/step), so the
+// 1081 steps below span exactly 270°. Using the URG-04LX value (2*pi/1024)
+// here stretches the same steps over 379.7°: past a full turn, the polar
+// binning in BackgroundModel wraps modulo 2*pi and the outermost steps alias
+// onto the bins of the opposite bearing, so their learned background is the
+// wrong wall and real people are subtracted away near the room edges.
 struct Geometry {
     int startStep = 0;
     int endStep = 1080;
     int frontStep = 540;
-    float angularResolution = 0.006135923f; // 2*pi/1024 rad (SCIP standard)
+    float angularResolution = 0.004363323f; // 2*pi/1440 rad = 0.25°/step
     float angleOfStep(int step) const {
         return static_cast<float>(step - frontStep) * angularResolution;
     }
