@@ -102,6 +102,11 @@ std::vector<Scenario> scenarioLibrary() {
         // Candidate work: per-knot joint hypothesis handling, sensor layout
         // guidance (a third sensor breaks most knots), size signatures.
         s.quarantined = true;
+        // Measured 2026-08: IDsw 15, IDF1 0.633, MOTA 0.992, FP rate 0.006.
+        // The ceiling is those numbers plus margin — worse than this is a
+        // regression and fails CI even in quarantine.
+        s.quarantineCeiling = {.idSwitchesMax = 20, .idf1Min = 0.58f, .motaMin = 0.98f,
+                               .falsePositiveRateMax = 0.012f};
         lib.push_back(s);
     }
 
@@ -143,9 +148,13 @@ std::vector<Scenario> scenarioLibrary() {
         lib.push_back(s);
     }
 
-    // 7. Stress: 50 people in a 20x15 hall, 3 sensors. This gate is about the
-    //    engine (throughput, no blowup), not identity — MOT gates disabled,
-    //    the pipeline must stay far under the 60 Hz budget (16.6 ms).
+    // 7. Stress: 50 people in a 20x15 hall, 3 sensors. Primarily a throughput
+    //    gate (the pipeline must stay far under the 60 Hz budget of 16.6 ms),
+    //    but the MOT gates are real ratchets too: measured 2026-08 at IDsw
+    //    197 / IDF1 0.546 / MOTA 0.820 / FP rate 0.028, gated with margin.
+    //    Fully disabled MOT gates (the previous idSwitchesMax = 1<<20) meant
+    //    a tracker change could double the switches in the packed-room case —
+    //    the exact case docs/03 argues about — without any red anywhere.
     {
         Scenario s;
         s.name = "stress_50";
@@ -164,8 +173,8 @@ std::vector<Scenario> scenarioLibrary() {
             {{0.15f, 14.85f}, -1.5707963f},
         };
         s.durationSeconds = 30.0f;
-        s.gates = {.idSwitchesMax = 1 << 20, .idf1Min = -1.0f, .motaMin = -1.0f,
-                   .falsePositiveRateMax = -1.0f, .maxAvgTickUs = 8000.0f};
+        s.gates = {.idSwitchesMax = 240, .idf1Min = 0.50f, .motaMin = 0.78f,
+                   .falsePositiveRateMax = 0.045f, .maxAvgTickUs = 8000.0f};
         lib.push_back(s);
     }
 
@@ -319,11 +328,20 @@ ScenarioOutcome runScenario(const Scenario& scenario, float tickHz, bool debugTr
                                   : 0.0f;
     outcome.maxTickUs = maxTickUs;
 
-    const MotResult& m = outcome.metrics;
-    const ScenarioGates& g = scenario.gates;
+    outcome.failureReason = gateFailures(outcome.metrics, outcome.avgTickUs, scenario.gates);
+    outcome.passed = outcome.failureReason.empty();
+    if (scenario.quarantined) {
+        outcome.ceilingReason =
+            gateFailures(outcome.metrics, outcome.avgTickUs, scenario.quarantineCeiling);
+        outcome.ceilingHeld = outcome.ceilingReason.empty();
+    }
+    return outcome;
+}
+
+std::string gateFailures(const MotResult& m, float avgTickUs, const ScenarioGates& g) {
+    std::string reason;
     auto fail = [&](const std::string& why) {
-        outcome.passed = false;
-        outcome.failureReason += outcome.failureReason.empty() ? why : "; " + why;
+        reason += reason.empty() ? why : "; " + why;
     };
     if (m.idSwitches > g.idSwitchesMax) {
         fail("idSwitches " + std::to_string(m.idSwitches) + " > " +
@@ -342,11 +360,10 @@ ScenarioOutcome runScenario(const Scenario& scenario, float tickHz, bool debugTr
                  std::to_string(g.falsePositiveRateMax));
         }
     }
-    if (g.maxAvgTickUs >= 0.0f && outcome.avgTickUs > g.maxAvgTickUs) {
-        fail("avg tick " + std::to_string(outcome.avgTickUs) + " us > " +
-             std::to_string(g.maxAvgTickUs));
+    if (g.maxAvgTickUs >= 0.0f && avgTickUs > g.maxAvgTickUs) {
+        fail("avg tick " + std::to_string(avgTickUs) + " us > " + std::to_string(g.maxAvgTickUs));
     }
-    return outcome;
+    return reason;
 }
 
 } // namespace sillage

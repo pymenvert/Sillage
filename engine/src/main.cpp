@@ -58,15 +58,21 @@ int runEval() {
     for (const sillage::Scenario& scenario : sillage::scenarioLibrary()) {
         const sillage::ScenarioOutcome outcome = sillage::runScenario(scenario);
         const sillage::MotResult& m = outcome.metrics;
+        // Quarantine exempts a scenario from its aspirational gates, not from
+        // regressing: breaching the quarantine ceiling fails the eval too.
+        const bool regressed = scenario.quarantined && !outcome.ceilingHeld;
         const char* verdict = outcome.passed          ? "PASS"
+                              : regressed             ? "QUARANTINE-REGRESSED "
                               : scenario.quarantined ? "QUARANTINE "
                                                       : "FAIL ";
         std::printf("%-20s %8d %8.3f %8.3f %7d %7d %5d %5d %8.0f  %s%s\n", scenario.name.c_str(),
                     m.idSwitches, static_cast<double>(m.mota), static_cast<double>(m.idf1),
                     m.misses, m.falsePositives, m.distinctIds, m.maxSimultaneous,
                     static_cast<double>(outcome.avgTickUs), verdict,
-                    outcome.passed ? "" : outcome.failureReason.c_str());
-        if (!outcome.passed && !scenario.quarantined) {
+                    outcome.passed ? ""
+                    : regressed    ? outcome.ceilingReason.c_str()
+                                   : outcome.failureReason.c_str());
+        if ((!outcome.passed && !scenario.quarantined) || regressed) {
             ++failed;
         }
     }

@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdio>
+
 namespace sillage {
 namespace {
 
@@ -13,10 +15,21 @@ class ScenarioGate : public ::testing::TestWithParam<Scenario> {};
 TEST_P(ScenarioGate, HoldsItsGates) {
     const ScenarioOutcome outcome = runScenario(GetParam());
     const MotResult& m = outcome.metrics;
-    if (GetParam().quarantined && !outcome.passed) {
-        GTEST_SKIP() << GetParam().name << " (quarantined): " << outcome.failureReason
-                     << " (IDsw=" << m.idSwitches << " MOTA=" << m.mota << " IDF1=" << m.idf1
-                     << ")";
+    if (GetParam().quarantined) {
+        // Quarantine exempts the scenario from its aspirational gates, not
+        // from regressing. The previous unconditional GTEST_SKIP meant this
+        // scenario could go from 15 ID switches to 200 without a single red
+        // pixel; the ceiling (today's numbers plus margin) turns that into a
+        // CI failure while the M1 work item stays open.
+        EXPECT_TRUE(outcome.ceilingHeld)
+            << GetParam().name << " REGRESSED past its quarantine ceiling: "
+            << outcome.ceilingReason << " (IDsw=" << m.idSwitches << " MOTA=" << m.mota
+            << " IDF1=" << m.idf1 << " fp=" << m.falsePositives << ")";
+        if (outcome.passed) {
+            std::printf("[  NOTE  ] %s now passes its real gates — lift the quarantine.\n",
+                        GetParam().name.c_str());
+        }
+        return;
     }
     EXPECT_TRUE(outcome.passed) << GetParam().name << ": " << outcome.failureReason
                                 << " (IDsw=" << m.idSwitches << " MOTA=" << m.mota
