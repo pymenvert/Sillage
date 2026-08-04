@@ -106,6 +106,14 @@ private:
     std::atomic<bool> showLocked_{false};
     std::atomic<bool> outputsMuted_{false};
 
+    // Serializes POST /api/config writers end to end (persist to disk, then
+    // publish to the tick thread), so two concurrent writers cannot leave the
+    // file and the running engine on different versions. Deliberately separate
+    // from configMutex_: the disk write happens under this mutex only, so a
+    // slow save (project on a network share) can no longer stall the tick
+    // thread, which grabs configMutex_ every tick to check for pending config.
+    std::mutex configWriteMutex_;
+
     // Load stats, published on /api/status and the WS health payload.
     mutable std::mutex statsMutex_;
     uint64_t overruns_ = 0;
@@ -115,6 +123,7 @@ private:
     float tickMsMax_ = 0.0f;
     uint32_t tracksNow_ = 0;
     bool learning_ = true;
+    bool recordingFailed_ = false; // a .srec write failed (disk full); latched
 };
 
 } // namespace sillage

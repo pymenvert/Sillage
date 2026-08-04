@@ -176,11 +176,11 @@
   <section class="glass">
     <h2>Sorties</h2>
     <div class="field"><label>OSC Augmenta</label><input type="checkbox" id="c-osc-on"></div>
-    <div class="field"><input type="text" id="c-osc-host"><input type="number" class="short" id="c-osc-port"></div>
+    <div class="field"><input type="text" id="c-osc-host"><input type="number" class="short" id="c-osc-port" min="1" max="65535"></div>
     <div class="field"><label>TUIO</label><input type="checkbox" id="c-tuio-on"></div>
-    <div class="field"><input type="text" id="c-tuio-host"><input type="number" class="short" id="c-tuio-port"></div>
+    <div class="field"><input type="text" id="c-tuio-host"><input type="number" class="short" id="c-tuio-port" min="1" max="65535"></div>
     <div class="field"><label>ADM-OSC (audio)</label><input type="checkbox" id="c-adm-on"></div>
-    <div class="field"><input type="text" id="c-adm-host"><input type="number" class="short" id="c-adm-port"></div>
+    <div class="field"><input type="text" id="c-adm-host"><input type="number" class="short" id="c-adm-port" min="1" max="65535"></div>
     <h2 style="margin-top:10px">Conditionnement</h2>
     <div class="field"><label>prédiction <b id="c-pred-val">0</b> ms</label>
       <input type="range" id="c-pred" min="0" max="200" step="10" style="width:110px"></div>
@@ -480,6 +480,9 @@ function updateAlarm(h) {
     msg = `⚠ TOUS LES CAPTEURS HORS LIGNE (${h.sensorsDown}/${h.sensorsTotal})`; cls = "";
   } else if (h.sensorsDown > 0) {
     msg = `⚠ CAPTEUR HORS LIGNE — ${h.sensorsDown}/${h.sensorsTotal} · couverture réduite`;
+    cls = "warn";
+  } else if (h.recFailed) {
+    msg = "⚠ ENREGISTREMENT EN ÉCHEC (disque plein ?) — le .srec est tronqué";
     cls = "warn";
   } else if (h.learning) {
     msg = "APPRENTISSAGE DU FOND — la salle doit être vide"; cls = "info";

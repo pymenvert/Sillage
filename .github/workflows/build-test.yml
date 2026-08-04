@@ -64,11 +64,14 @@ jobs:
             exit 1
           }
 
-      - name: Smoke run (300 ticks, headless)
+      - name: Smoke run (300 ticks, headless) + MOT eval
         shell: bash
         run: |
           bin=$(find build -type f \( -name "sillage-engine" -o -name "sillage-engine.exe" \) | head -1)
           "$bin" --ticks 300 --headless
+          # Same scenario library as the ctest gates, through the CLI verdict
+          # path — this is what docs/10 tells users to trust, so CI runs it.
+          "$bin" --eval
 
       - name: Upload logs on failure
         if: failure()

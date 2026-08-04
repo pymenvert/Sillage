@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <limits>
 
 namespace sillage {
 namespace {
@@ -52,6 +53,29 @@ TEST(Json, RejectsDeeplyNestedInputWithoutStackOverflow) {
 
 // --- Project config --------------------------------------------------------------
 
+// strtod accepts 1e999 (HUGE_VAL) with a fully-consumed token, so overflow
+// slips past the token-boundary check. Letting it through poisons the file:
+// the serializer would emit a bare `inf`, which no JSON parser reads back —
+// a config saved once with such a value could never be loaded again.
+TEST(Json, RejectsNumbersThatOverflowToInfinity) {
+    EXPECT_FALSE(json::parse("1e999").value.has_value());
+    EXPECT_FALSE(json::parse("-1e999").value.has_value());
+    EXPECT_FALSE(json::parse(R"({"port":1e999})").value.has_value());
+    // Large but finite still parses.
+    EXPECT_TRUE(json::parse("1e300").value.has_value());
+}
+
+TEST(Json, SerializesNonFiniteNumbersAsNull) {
+    // Internal computation can still produce non-finite values; the document
+    // must stay valid JSON regardless. null is the conventional degradation.
+    EXPECT_EQ(json::Value(std::numeric_limits<double>::infinity()).serialize(), "null");
+    EXPECT_EQ(json::Value(std::numeric_limits<double>::quiet_NaN()).serialize(), "null");
+    const json::Value arr =
+        json::Array{json::Value(1.0), json::Value(std::numeric_limits<double>::infinity())};
+    const auto reparsed = json::parse(arr.serialize());
+    ASSERT_TRUE(reparsed.value.has_value()) << reparsed.error;
+}
+
 TEST(ProjectConfig, SaveLoadRoundtrip) {
     ProjectConfig cfg;
     cfg.roomSize = {12.0f, 9.0f};
@@ -90,6 +114,43 @@ TEST(ProjectConfig, RejectsBrokenConfigs) {
     EXPECT_FALSE(ProjectConfig::fromJson(*bad2.value, error).has_value()); // no host
     const auto bad3 = json::parse(R"({"version":99})");
     EXPECT_FALSE(ProjectConfig::fromJson(*bad3.value, error).has_value()); // future version
+}
+
+// Raw static_cast'ing of port fields used to wrap silently: 70000 became
+// 4464 and the engine "worked" while sending to the wrong port — on site
+// that reads as "the network is broken", not "the config is wrong".
+TEST(ProjectConfig, RejectsOutOfRangePorts) {
+    std::string error;
+    const auto tooBig = json::parse(R"({"outputs":{"augmentaOsc":{"enabled":true,"port":70000}}})");
+    EXPECT_FALSE(ProjectConfig::fromJson(*tooBig.value, error).has_value());
+    EXPECT_NE(error.find("port"), std::string::npos) << error;
+
+    const auto negative = json::parse(R"({"outputs":{"tuio":{"port":-1}}})");
+    EXPECT_FALSE(ProjectConfig::fromJson(*negative.value, error).has_value());
+
+    const auto asString =
+        json::parse(R"({"sensors":[{"type":"sick","host":"10.0.0.2","port":"2112"}]})");
+    EXPECT_FALSE(ProjectConfig::fromJson(*asString.value, error).has_value());
+
+    const auto negObjects = json::parse(R"({"outputs":{"admOsc":{"maxObjects":-5}}})");
+    EXPECT_FALSE(ProjectConfig::fromJson(*negObjects.value, error).has_value());
+}
+
+// The port default must follow the sensor type, as the CLI flags do. A single
+// hardcoded 10940 meant a file-configured SICK silently aimed at the Hokuyo
+// port and never connected — while the same sensor added via --sick worked.
+TEST(ProjectConfig, SensorPortDefaultsFollowTheType) {
+    std::string error;
+    const auto cfg = json::parse(R"({"sensors":[
+        {"type":"sick","host":"10.0.0.2"},
+        {"type":"hokuyo","host":"10.0.0.3"},
+        {"type":"udp","host":""}]})");
+    const auto parsed = ProjectConfig::fromJson(*cfg.value, error);
+    ASSERT_TRUE(parsed.has_value()) << error;
+    ASSERT_EQ(parsed->sensors.size(), 3u);
+    EXPECT_EQ(parsed->sensors[0].port, 2112);  // SICK CoLa A
+    EXPECT_EQ(parsed->sensors[1].port, 10940); // Hokuyo SCIP
+    EXPECT_EQ(parsed->sensors[2].port, 9911);  // UDP bridge
 }
 
 // --- Zones ------------------------------------------------------------------------

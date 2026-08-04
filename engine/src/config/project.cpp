@@ -1,5 +1,6 @@
 #include "config/project.h"
 
+#include <cmath>
 #include <cstdint>
 #include <fstream>
 #include <sstream>
@@ -19,6 +20,24 @@ std::optional<Vec2> vec2From(const json::Value& v) {
     }
     return Vec2{static_cast<float>(v.asArray()[0].asNumber()),
                 static_cast<float>(v.asArray()[1].asNumber())};
+}
+
+// Strict port field: absent -> fallback, anything else must be an integer in
+// [1, 65535]. The previous raw static_cast invited silent wrap-around — a
+// typo'd 70000 became port 4464, -1 became 65535, and a string value silently
+// took the fallback — and the engine then "worked" while sending to the wrong
+// port, which on a show site reads as "the network is broken".
+std::optional<uint16_t> readPort(const json::Value& v, uint16_t fallback, const char* what,
+                                 std::string& error) {
+    if (v.isNull()) {
+        return fallback;
+    }
+    const double d = v.isNumber() ? v.asNumber() : -1.0;
+    if (d < 1.0 || d > 65535.0 || d != std::floor(d)) {
+        error = std::string(what) + " must be an integer between 1 and 65535";
+        return std::nullopt;
+    }
+    return static_cast<uint16_t>(d);
 }
 
 } // namespace
@@ -109,7 +128,17 @@ std::optional<ProjectConfig> ProjectConfig::fromJson(const json::Value& v, std::
         SensorConfig sensor;
         sensor.type = s["type"].asString().empty() ? "hokuyo" : s["type"].asString();
         sensor.host = s["host"].asString();
-        sensor.port = static_cast<uint16_t>(s["port"].asNumber(10940));
+        // Same per-type defaults as the CLI flags in main.cpp — a single
+        // hardcoded 10940 here meant a file-configured SICK defaulted to the
+        // Hokuyo port and never connected, while `--sick` worked.
+        const uint16_t defaultPort = sensor.type == "sick"  ? 2112
+                                     : sensor.type == "udp" ? 9911
+                                                            : 10940;
+        if (const auto port = readPort(s["port"], defaultPort, "sensor port", error)) {
+            sensor.port = *port;
+        } else {
+            return std::nullopt;
+        }
         if (const auto pos = vec2From(s["position"])) {
             sensor.pose.position = *pos;
         }
@@ -141,20 +170,41 @@ std::optional<ProjectConfig> ProjectConfig::fromJson(const json::Value& v, std::
     if (!osc["host"].asString().empty()) {
         cfg.oscHost = osc["host"].asString();
     }
-    cfg.oscPort = static_cast<uint16_t>(osc["port"].asNumber(cfg.oscPort));
+    if (const auto port = readPort(osc["port"], cfg.oscPort, "augmentaOsc port", error)) {
+        cfg.oscPort = *port;
+    } else {
+        return std::nullopt;
+    }
     const json::Value& tuio = v["outputs"]["tuio"];
     cfg.tuioEnabled = tuio["enabled"].asBool(cfg.tuioEnabled);
     if (!tuio["host"].asString().empty()) {
         cfg.tuioHost = tuio["host"].asString();
     }
-    cfg.tuioPort = static_cast<uint16_t>(tuio["port"].asNumber(cfg.tuioPort));
+    if (const auto port = readPort(tuio["port"], cfg.tuioPort, "tuio port", error)) {
+        cfg.tuioPort = *port;
+    } else {
+        return std::nullopt;
+    }
     const json::Value& adm = v["outputs"]["admOsc"];
     cfg.admEnabled = adm["enabled"].asBool(cfg.admEnabled);
     if (!adm["host"].asString().empty()) {
         cfg.admHost = adm["host"].asString();
     }
-    cfg.admPort = static_cast<uint16_t>(adm["port"].asNumber(cfg.admPort));
-    cfg.admMaxObjects = static_cast<uint32_t>(adm["maxObjects"].asNumber(cfg.admMaxObjects));
+    if (const auto port = readPort(adm["port"], cfg.admPort, "admOsc port", error)) {
+        cfg.admPort = *port;
+    } else {
+        return std::nullopt;
+    }
+    if (!adm["maxObjects"].isNull()) {
+        const double n = adm["maxObjects"].isNumber() ? adm["maxObjects"].asNumber() : -1.0;
+        // A negative value static_cast to uint32_t used to become ~4 billion
+        // ADM objects; cap to a range that still covers every console.
+        if (n < 1.0 || n > 4096.0 || n != std::floor(n)) {
+            error = "admOsc maxObjects must be an integer between 1 and 4096";
+            return std::nullopt;
+        }
+        cfg.admMaxObjects = static_cast<uint32_t>(n);
+    }
 
     cfg.predictionSeconds =
         static_cast<float>(v["conditioning"]["predictionSeconds"].asNumber());

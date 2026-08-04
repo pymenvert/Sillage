@@ -128,6 +128,15 @@ private:
             fail("invalid number");
             return std::nullopt;
         }
+        // strtod turns 1e999 into HUGE_VAL with a fully-consumed token, so the
+        // end-position check above cannot catch overflow. Letting an infinity
+        // through poisons everything downstream: the serializer would emit a
+        // bare `inf` token, which is not JSON — a config saved that way can
+        // never be loaded again.
+        if (!std::isfinite(value)) {
+            fail("number out of range");
+            return std::nullopt;
+        }
         return Value(value);
     }
 
@@ -304,7 +313,14 @@ void serializeTo(const Value& v, std::string& out, int indent, int depth) {
         out += v.asBool() ? "true" : "false";
     } else if (v.isNumber()) {
         const double d = v.asNumber();
-        if (d == std::floor(d) && std::abs(d) < 1e15) {
+        if (!std::isfinite(d)) {
+            // JSON has no inf/nan. A bare `inf` token would make the whole
+            // document unparseable — for the project file that means an engine
+            // that refuses to start. null is the conventional stand-in
+            // (nlohmann, Python, JS all degrade this way) and keeps the
+            // document valid.
+            out += "null";
+        } else if (d == std::floor(d) && std::abs(d) < 1e15) {
             out += std::to_string(static_cast<long long>(d));
         } else {
             char buf[32];

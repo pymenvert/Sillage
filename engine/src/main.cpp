@@ -45,7 +45,8 @@ void printUsage() {
 #ifdef _WIN32
                 "  --service            run under the Windows Service Control Manager\n"
 #endif
-                "  --eval               run the MOT scenario library and exit\n");
+                "  --eval               run the MOT scenario library and exit\n"
+                "  --debug-scenario <name>  trace one scenario (births, deaths, ID swaps)\n");
 }
 
 // Runs the full scenario library, prints a metrics table, returns the number

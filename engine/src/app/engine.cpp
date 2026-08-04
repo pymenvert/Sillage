@@ -306,6 +306,10 @@ bool Engine::run() {
                 }
             }
             sensorsDown_ = down;
+            // Latched, never cleared: a truncated .srec is unusable evidence,
+            // so the operator must learn about it during the show, not the
+            // morning after when the recording is needed.
+            recordingFailed_ = recordingFailed_ || recorder_.failed();
         }
 
         if (!config_.headless && tick % 2 == 0) { // UI at ~30 Hz
@@ -389,48 +393,57 @@ std::string Engine::handleApi(const std::string& method, const std::string& path
         std::string error;
         auto incoming = ProjectConfig::fromJson(*parsed.value, error);
         if (!incoming) {
-            {
-                std::string out = "{\"ok\":false,\"error\":";
-                appendJsonString(out, error);
-                return out + "}";
-            }
+            std::string out = "{\"ok\":false,\"error\":";
+            appendJsonString(out, error);
+            return out + "}";
         }
-        std::lock_guard lock(configMutex_);
-        // Zones, outputs and conditioning hot-apply at the next tick; sensor
-        // and room geometry need a pipeline rebuild, i.e. a restart. Compare
-        // sensors in full (not just count): editing a sensor's host or pose
-        // must still report restartRequired, or disk and runtime silently
-        // diverge.
-        auto sensorsDiffer = [&] {
-            if (incoming->sensors.size() != project_.sensors.size()) {
-                return true;
-            }
-            for (size_t i = 0; i < incoming->sensors.size(); ++i) {
-                const SensorConfig& a = incoming->sensors[i];
-                const SensorConfig& b = project_.sensors[i];
-                if (a.type != b.type || a.host != b.host || a.port != b.port ||
-                    a.pose.position.x != b.pose.position.x ||
-                    a.pose.position.y != b.pose.position.y || a.pose.theta != b.pose.theta) {
+        // Writers are serialized end to end (compare, persist, publish) so two
+        // concurrent POSTs cannot leave the file on one version and the
+        // running engine on the other. configMutex_ itself is only taken for
+        // the short shared-state accesses: the disk write used to happen under
+        // it, and a slow save (project on a network share) stalled the tick
+        // thread, which takes configMutex_ every tick.
+        std::lock_guard writer(configWriteMutex_);
+        bool restartRequired;
+        {
+            std::lock_guard lock(configMutex_);
+            // Zones, outputs and conditioning hot-apply at the next tick;
+            // sensor and room geometry need a pipeline rebuild, i.e. a
+            // restart. Compare sensors in full (not just count): editing a
+            // sensor's host or pose must still report restartRequired, or disk
+            // and runtime silently diverge.
+            auto sensorsDiffer = [&] {
+                if (incoming->sensors.size() != project_.sensors.size()) {
                     return true;
                 }
-            }
-            return false;
-        };
-        const bool restartRequired =
-            incoming->roomSize.x != project_.roomSize.x ||
-            incoming->roomSize.y != project_.roomSize.y ||
-            incoming->simEnabled != project_.simEnabled || sensorsDiffer();
-        if (!config_.projectPath.empty()) {
+                for (size_t i = 0; i < incoming->sensors.size(); ++i) {
+                    const SensorConfig& a = incoming->sensors[i];
+                    const SensorConfig& b = project_.sensors[i];
+                    if (a.type != b.type || a.host != b.host || a.port != b.port ||
+                        a.pose.position.x != b.pose.position.x ||
+                        a.pose.position.y != b.pose.position.y ||
+                        a.pose.theta != b.pose.theta) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+            restartRequired = incoming->roomSize.x != project_.roomSize.x ||
+                              incoming->roomSize.y != project_.roomSize.y ||
+                              incoming->simEnabled != project_.simEnabled || sensorsDiffer();
+        }
+        if (!config_.projectPath.empty()) { // projectPath is fixed at startup
             std::string saveError;
             if (!incoming->save(config_.projectPath, saveError)) {
-                {
                 std::string out = "{\"ok\":false,\"error\":";
                 appendJsonString(out, saveError);
                 return out + "}";
             }
-            }
         }
-        pendingConfig_ = std::move(*incoming);
+        {
+            std::lock_guard lock(configMutex_);
+            pendingConfig_ = std::move(*incoming);
+        }
         return std::string("{\"ok\":true,\"restartRequired\":") +
                (restartRequired ? "true" : "false") +
                ",\"persisted\":" + (config_.projectPath.empty() ? "false" : "true") + "}";
@@ -529,16 +542,27 @@ std::string Engine::statusJson() const {
         const SensorHealth h = drivers_[i]->health();
         std::snprintf(buf, sizeof(buf),
                       "%s{\"id\":%zu,\"type\":\"%s\",\"connected\":%s,\"fps\":%.1f,"
-                      "\"frames\":%llu,\"errors\":%llu}",
+                      "\"frames\":%llu,\"errors\":%llu,\"lastError\":",
                       first ? "" : ",", simSensors + i, drivers_[i]->type(),
                       h.connected ? "true" : "false",
                       static_cast<double>(h.scansPerSecond),
                       static_cast<unsigned long long>(h.framesReceived),
                       static_cast<unsigned long long>(h.decodeErrors));
         out += buf;
+        // Every driver fills lastError; dropping it here left the integrator
+        // staring at "412 decode errors" with no way to learn which error.
+        // Escaped separately (not snprintf'd): driver messages embed peer
+        // strings of unbounded length.
+        appendJsonString(out, h.lastError);
+        out += '}';
         first = false;
     }
-    out += "]}";
+    bool recFailed;
+    {
+        std::lock_guard lock(statsMutex_);
+        recFailed = recordingFailed_;
+    }
+    out += std::string("],\"recordingFailed\":") + (recFailed ? "true" : "false") + "}";
     return out;
 }
 
@@ -547,7 +571,7 @@ std::string Engine::snapshotToJson(const FrameSnapshot& snap) {
     // lands; M0/M1 keep the engine dependency-free.
     std::string out;
     out.reserve(snap.foreground.size() * 24 + snap.tracks.size() * 96 + 256);
-    char buf[160];
+    char buf[224]; // sized for the health strip below, its longest tenant
 
     out += "{\"tick\":";
     out += std::to_string(snap.tick);
@@ -560,11 +584,13 @@ std::string Engine::snapshotToJson(const FrameSnapshot& snap) {
         std::lock_guard lock(statsMutex_);
         std::snprintf(buf, sizeof(buf),
                       ",\"health\":{\"tickMs\":%.2f,\"learning\":%s,\"locked\":%s,"
-                      "\"muted\":%s,\"overruns\":%llu,\"sensorsDown\":%u,\"sensorsTotal\":%u}",
+                      "\"muted\":%s,\"overruns\":%llu,\"sensorsDown\":%u,\"sensorsTotal\":%u,"
+                      "\"recFailed\":%s}",
                       static_cast<double>(tickMsAvg_), learning_ ? "true" : "false",
                       showLocked_.load() ? "true" : "false",
                       outputsMuted_.load() ? "true" : "false",
-                      static_cast<unsigned long long>(overruns_), sensorsDown_, sensorsTotal_);
+                      static_cast<unsigned long long>(overruns_), sensorsDown_, sensorsTotal_,
+                      recordingFailed_ ? "true" : "false");
         out += buf;
     }
 
