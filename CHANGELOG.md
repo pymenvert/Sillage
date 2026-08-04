@@ -2,6 +2,36 @@
 
 ## Non publié — Prêt pour le spectacle et pour la vente
 
+### Corrections
+
+- **Hokuyo : géométrie du balayage corrigée**. La résolution angulaire par défaut était
+  celle d'un URG-04LX (2π/1024) alors que la plage de pas décrit un UST-10LX/20LX, ce qui
+  étalait 1081 pas sur **379,7° au lieu de 270°**. Deux conséquences sur un vrai capteur —
+  le type configuré par défaut : chaque point était placé à un azimut faux, et le balayage
+  dépassant le tour complet, les pas des extrémités aliasaient sur les bins de fond de
+  l'azimut opposé — les personnes proches des murs latéraux étaient soustraites comme du
+  fond. Verrouillé par un test sur l'étendue du balayage.
+- **Réapprentissage du fond : course entre le thread HTTP et le tick**.
+  `POST /api/background/relearn` réinitialisait les modèles de fond depuis le thread de
+  connexion pendant que le tick les lisait. Un réapprentissage partiellement appliqué
+  laissait `learning()` à faux avec des bins vides : toute la salle passait en avant-plan
+  **définitivement**, le chemin d'apprentissage ne repassant jamais dessus. La demande est
+  désormais enregistrée puis consommée en tête du tick suivant, et deux appuis successifs
+  ne coûtent qu'une réinitialisation.
+- **Arrêt du serveur HTTP/WebSocket sous Linux : blocage définitif**. `stop()` fermait la
+  socket d'écoute en comptant sur cette fermeture pour débloquer le thread parqué dans
+  `accept()`. Windows et macOS se comportent ainsi, **Linux non** : le thread restait
+  bloqué et `stop()` attendait indéfiniment une jonction qui ne pouvait aboutir que si
+  quelqu'un se connectait. Le thread d'acceptation attend désormais par intervalles bornés
+  et `stop()` le laisse se retirer avant de fermer la socket — ce qui supprime au passage
+  la course sur le descripteur entre les deux threads. Conséquence directe : la CI Linux,
+  **rouge depuis un mois** (l'étape de test consommait 4 h avant d'être tuée, alors que
+  macOS et Windows passaient), repasse au vert ; la suite complète s'exécute en ~5 s.
+- **Compilation sous GCC 13 (Ubuntu 24.04)** : `-Werror=maybe-uninitialized` transformait
+  un faux positif sur `std::variant` en échec de build, alors que le README annonce
+  « Ubuntu 22.04+ ». La CI ne pouvait pas le voir, sa matrice étant épinglée sur 22.04 ;
+  elle couvre maintenant les deux LTS supportées.
+
 ### Spectacle vivant
 - **Dégradation par capteur** : chaque LiDAR apprend son fond indépendamment. Un capteur
   absent ou en panne réduit la couverture au lieu d'arrêter tout le moteur.
