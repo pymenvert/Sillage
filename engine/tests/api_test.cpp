@@ -136,5 +136,39 @@ TEST_F(ApiServer, SilentClientDoesNotWedgeControlPlane) {
     tcpClose(idle);
 }
 
+// stop() must return promptly on a server that never saw a single connection.
+// Regression: stop() used to close the listener and then join the accept
+// thread, expecting the close to unblock accept(). On Linux it does not, so
+// the join waited forever — every fixture in this file hung in TearDown, and
+// the Linux CI job burned its whole time budget before being killed. Windows
+// and macOS do wake accept() on close, which is why only Linux hung.
+TEST(WsHttpServerShutdown, StopsPromptlyWithoutAnyClient) {
+    WsHttpServer idle;
+    const std::filesystem::path root =
+        std::filesystem::temp_directory_path() / "sillage_shutdown_test_root";
+    std::filesystem::create_directories(root);
+
+    bool started = false;
+    for (uint16_t p = 19000; p < 19020 && !started; ++p) {
+        started = idle.start("127.0.0.1", p, root);
+    }
+    ASSERT_TRUE(started) << "no free port";
+
+    // Let the accept thread actually park inside accept() before stopping.
+    // Without this the thread may still be starting up, observe !running_
+    // before its first accept(), and exit for reasons that prove nothing.
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+    const auto begin = std::chrono::steady_clock::now();
+    idle.stop();
+    const auto elapsed = std::chrono::steady_clock::now() - begin;
+
+    EXPECT_LT(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count(), 2000)
+        << "stop() must not wait on a connection that never comes";
+
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+}
+
 } // namespace
 } // namespace sillage::net

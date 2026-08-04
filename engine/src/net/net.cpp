@@ -199,6 +199,16 @@ SocketHandle TcpListener::accept() {
     return static_cast<SocketHandle>(client);
 }
 
+SocketHandle TcpListener::acceptFor(int timeoutMs) {
+    if (socket_ == kInvalidSocket) {
+        return kInvalidSocket;
+    }
+    if (waitReadable(socket_, timeoutMs) != 1) {
+        return kInvalidSocket; // timed out, or the listener is gone
+    }
+    return accept();
+}
+
 void TcpListener::close() {
     if (socket_ != kInvalidSocket) {
         tcpClose(socket_);
