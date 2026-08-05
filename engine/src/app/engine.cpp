@@ -248,12 +248,16 @@ bool Engine::run() {
 
         std::vector<ScanFrame> frames;
         if (!config_.replayPath.empty()) {
-            auto next = replayer_.nextTick();
-            if (!next) {
+            // Timeline-faithful: ticks that had no frames when live replay as
+            // empty ticks, instead of compressing the recording (see
+            // ScanReplayer::nextTickAt) — a compressed replay shows the
+            // tracker velocities the live session never had.
+            auto due = replayer_.nextTickAt(tick);
+            if (!due) {
                 std::printf("Replay finished.\n");
                 break;
             }
-            frames = std::move(next->second);
+            frames = std::move(*due);
         } else {
             if (simulator_) {
                 frames = simulator_->step(dt, tickStart);

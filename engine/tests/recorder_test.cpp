@@ -49,6 +49,48 @@ TEST(Recorder, RoundtripPreservesFrames) {
     std::filesystem::remove(path);
 }
 
+// The recorder only writes ticks that had frames: a 15 Hz sensor against a
+// 60 Hz tick leaves 3-tick gaps in the file. Replay must reproduce that
+// timeline — one record group per engine tick would compress it 4x, and the
+// replayed tracker would see velocities the live session never had (a 60 s
+// field incident "replaying" in 15 s with people moving 4x too fast).
+TEST(Recorder, ReplayPreservesRecordedTimelineGaps) {
+    const auto path = tempFile("sillage_gaps.srec");
+    ScanFrame f;
+    f.sensor = 0;
+    f.points = {{0.1f, 2.0f}};
+    {
+        ScanRecorder rec;
+        ASSERT_TRUE(rec.open(path));
+        // Frames on live ticks 100, 104, 108 — a sparse sensor, and a
+        // recording that starts mid-session (rebased so 100 plays at 0).
+        rec.write(100, f);
+        rec.write(104, f);
+        rec.write(108, f);
+    }
+    ScanReplayer rep;
+    ASSERT_TRUE(rep.open(path));
+
+    const auto atTick0 = rep.nextTickAt(0);
+    ASSERT_TRUE(atTick0.has_value());
+    EXPECT_EQ(atTick0->size(), 1u) << "first record group plays at engine tick 0";
+    for (uint64_t t = 1; t <= 3; ++t) {
+        const auto gap = rep.nextTickAt(t);
+        ASSERT_TRUE(gap.has_value()) << "a gap is not the end of the recording";
+        EXPECT_TRUE(gap->empty()) << "tick " << t << " had no frames when live";
+    }
+    const auto atTick4 = rep.nextTickAt(4);
+    ASSERT_TRUE(atTick4.has_value());
+    EXPECT_EQ(atTick4->size(), 1u);
+    EXPECT_TRUE(rep.nextTickAt(5)->empty());
+    EXPECT_TRUE(rep.nextTickAt(6)->empty());
+    EXPECT_TRUE(rep.nextTickAt(7)->empty());
+    EXPECT_EQ(rep.nextTickAt(8)->size(), 1u);
+    EXPECT_FALSE(rep.nextTickAt(9).has_value()) << "recording over";
+    rep.close();
+    std::filesystem::remove(path);
+}
+
 TEST(Recorder, RejectsGarbageFile) {
     const auto path = tempFile("sillage_garbage.srec");
     {
