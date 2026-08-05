@@ -63,6 +63,21 @@ Simulator::Params demoSimParams(Vec2 room, uint32_t randomAgents, uint32_t seed)
     return p;
 }
 
+// Wiring = which sensors exist and where they connect (count, type, host,
+// port). Poses are deliberately excluded: they hot-apply through
+// Pipeline::setSensorPoses, while wiring changes need a pipeline rebuild.
+bool sensorWiringDiffers(const std::vector<SensorConfig>& a, const std::vector<SensorConfig>& b) {
+    if (a.size() != b.size()) {
+        return true;
+    }
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (a[i].type != b[i].type || a[i].host != b[i].host || a[i].port != b[i].port) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 std::vector<SensorPose> Engine::sensorLayout() const {
@@ -407,30 +422,18 @@ std::string Engine::handleApi(const std::string& method, const std::string& path
         bool restartRequired;
         {
             std::lock_guard lock(configMutex_);
-            // Zones, outputs and conditioning hot-apply at the next tick;
-            // sensor and room geometry need a pipeline rebuild, i.e. a
-            // restart. Compare sensors in full (not just count): editing a
-            // sensor's host or pose must still report restartRequired, or disk
-            // and runtime silently diverge.
-            auto sensorsDiffer = [&] {
-                if (incoming->sensors.size() != project_.sensors.size()) {
-                    return true;
-                }
-                for (size_t i = 0; i < incoming->sensors.size(); ++i) {
-                    const SensorConfig& a = incoming->sensors[i];
-                    const SensorConfig& b = project_.sensors[i];
-                    if (a.type != b.type || a.host != b.host || a.port != b.port ||
-                        a.pose.position.x != b.pose.position.x ||
-                        a.pose.position.y != b.pose.position.y ||
-                        a.pose.theta != b.pose.theta) {
-                        return true;
-                    }
-                }
-                return false;
-            };
+            // Zones, outputs, conditioning AND sensor poses hot-apply at the
+            // next tick — the background is per-sensor polar, so a pose change
+            // invalidates nothing (see Pipeline::setSensorPoses). Only the
+            // wiring (which sensors exist, where they connect), the room and
+            // the sim flag need a pipeline rebuild, i.e. a restart. Compare
+            // wiring in full (not just count): editing a sensor's host must
+            // still report restartRequired, or disk and runtime silently
+            // diverge.
             restartRequired = incoming->roomSize.x != project_.roomSize.x ||
                               incoming->roomSize.y != project_.roomSize.y ||
-                              incoming->simEnabled != project_.simEnabled || sensorsDiffer();
+                              incoming->simEnabled != project_.simEnabled ||
+                              sensorWiringDiffers(incoming->sensors, project_.sensors);
         }
         if (!config_.projectPath.empty()) { // projectPath is fixed at startup
             std::string saveError;
@@ -497,15 +500,35 @@ void Engine::applyPendingConfig() {
     config_.conditioning.predictionSeconds = pending->predictionSeconds;
     config_.conditioning.smoothing = pending->smoothing;
 
+    // Sensor poses hot-apply when the wiring is unchanged: this runs on the
+    // tick thread, the same thread that reads the poses, and the per-sensor
+    // polar background survives a pose change untouched. This is the path a
+    // calibration workflow needs — "adjust the pose" must never mean "restart
+    // the engine and re-learn the background in a room that is no longer
+    // empty". A wiring change (sensor added/removed/re-addressed) keeps the
+    // old runtime sensors until restart, as before.
+    const bool wiringUnchanged = !sensorWiringDiffers(pending->sensors, config_.sensors);
+    if (wiringUnchanged) {
+        for (size_t i = 0; i < config_.sensors.size(); ++i) {
+            config_.sensors[i].pose = pending->sensors[i].pose;
+        }
+        pipeline_.setSensorPoses(sensorLayout());
+    }
+
     std::lock_guard lock(configMutex_);
     // Runtime geometry stays as-is until restart; record the rest as truth.
+    // With unchanged wiring the pending sensors ARE the runtime sensors
+    // (poses just hot-applied above), so they stay; otherwise the old ones
+    // are restored so disk and runtime cannot silently diverge.
     const Vec2 room = project_.roomSize;
     const bool sim = project_.simEnabled;
     auto sensors = project_.sensors;
     project_ = std::move(*pending);
     project_.roomSize = room;
     project_.simEnabled = sim;
-    project_.sensors = std::move(sensors);
+    if (!wiringUnchanged) {
+        project_.sensors = std::move(sensors);
+    }
 }
 
 std::string Engine::statusJson() const {

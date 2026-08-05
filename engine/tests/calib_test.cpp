@@ -1,6 +1,7 @@
 #include "calib/collector.h"
 #include "calib/rigid2d.h"
 #include "core/background.h"
+#include "pipeline/pipeline.h"
 #include "sim/simulator.h"
 
 #include <gtest/gtest.h>
@@ -114,6 +115,59 @@ TEST(Calibration, RecoversSensorPoseFromWalk) {
                                << results[1].pose.position.y << ") rmse=" << results[1].rmse;
     EXPECT_LT(std::abs(angleError), 0.025f); // ~1.4 degrees
     EXPECT_LT(results[1].rmse, 0.06f);
+}
+
+// The full live-engine chain a calibration workflow will use: a Pipeline
+// running with WRONG poses, the collector fed from the pipeline's fused
+// room-frame foreground (mapped back to sensor-local via SensorPose::toLocal
+// — the exact inverse of the fusion transform), and the solver recovering the
+// true pose. This is the CI stand-in for "walk the room during setup".
+TEST(Calibration, RecoversPoseFromLivePipelineWithWrongPoses) {
+    const SensorPose truth0{{0.15f, 0.15f}, 0.0f};
+    const SensorPose truth1{{9.85f, 7.85f}, kPi};
+    // What the operator typed in from a tape measure: half a meter and ~11
+    // degrees off on sensor 1 — enough to split one person into two clusters.
+    const SensorPose wrong1{{9.45f, 7.55f}, kPi + 0.2f};
+
+    Simulator::Params sp;
+    sp.roomSize = {10.0f, 8.0f};
+    sp.agents = {{{1.0f, 1.0f}, {9.0f, 7.0f}, 1.1f, Simulator::Motion::PingPong, 1.5f}};
+    Simulator sim(sp);
+    sim.addSensor(truth0); // the simulator scans from the TRUE poses
+    sim.addSensor(truth1);
+
+    PipelineConfig cfg;
+    cfg.sensors = {truth0, wrong1}; // the pipeline believes the WRONG pose
+    cfg.backgroundBins = 720;
+    cfg.backgroundLearnFrames = 60;
+    Pipeline pipeline(cfg);
+
+    CalibrationCollector collector(2);
+    const float dt = 1.0f / 60.0f;
+    const auto ticks = static_cast<uint64_t>(30.0f / dt);
+    for (uint64_t tick = 0; tick < ticks; ++tick) {
+        const auto snap = pipeline.process(sim.step(dt, TimePoint{}), dt, tick, sp.roomSize);
+        // Feed per-sensor local observations from the fused foreground — the
+        // believed pose cancels exactly (toLocal inverts toRoom), so the
+        // collector sees true sensor-local data even under a wrong pose.
+        std::vector<std::vector<Vec2>> local(2);
+        for (const WorldPoint& p : snap.foreground) {
+            local[p.sensor].push_back(cfg.sensors[p.sensor].toLocal(p.pos));
+        }
+        for (SensorId s = 0; s < 2; ++s) {
+            collector.addObservation(s, tick, local[s]);
+        }
+    }
+
+    const auto results = collector.solve(0, truth0);
+    ASSERT_TRUE(results[1].solved) << results[1].message;
+    const float posError = (results[1].pose.position - truth1.position).norm();
+    float angleError = results[1].pose.theta - truth1.theta;
+    while (angleError > kPi) { angleError -= 2.0f * kPi; }
+    while (angleError < -kPi) { angleError += 2.0f * kPi; }
+    EXPECT_LT(posError, 0.05f) << "recovered (" << results[1].pose.position.x << ","
+                               << results[1].pose.position.y << ") rmse=" << results[1].rmse;
+    EXPECT_LT(std::abs(angleError), 0.025f);
 }
 
 // A sensor with no overlap must fail loudly, not return garbage.

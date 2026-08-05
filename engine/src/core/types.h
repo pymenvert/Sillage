@@ -47,6 +47,17 @@ struct SensorPose {
         const float a = theta + p.angle;
         return {position.x + p.distance * std::cos(a), position.y + p.distance * std::sin(a)};
     }
+
+    // Inverse of toRoom, in cartesian form: a room-frame point back into this
+    // sensor's local frame. Exact up to float rounding (~1e-6 m over room
+    // scales), which is what lets calibration reconstruct per-sensor local
+    // observations from the pipeline's fused room-frame foreground.
+    Vec2 toLocal(Vec2 room) const {
+        const float dx = room.x - position.x;
+        const float dy = room.y - position.y;
+        const float c = std::cos(theta), s = std::sin(theta);
+        return {c * dx + s * dy, -s * dx + c * dy};
+    }
 };
 
 // A point in the room frame, annotated with its origin sensor.

@@ -53,6 +53,16 @@ public:
     // the whole room stays foreground for the rest of the show.
     void requestRelearn();
 
+    // Replaces the sensor poses in place — the calibration path. Safe to a
+    // fault mid-session: the background is learned in each sensor's own polar
+    // frame, so moving a sensor's pose invalidates nothing; fusion simply maps
+    // through the new pose from the next process() on. This is what makes
+    // calibration usable during setup — adjusting a pose must never force a
+    // restart, which would re-learn the background in a room that is no
+    // longer empty. Tick-thread only, like process(). False on size mismatch:
+    // adding or removing a sensor is a wiring change, i.e. a restart.
+    bool setSensorPoses(const std::vector<SensorPose>& poses);
+
     FrameSnapshot process(const std::vector<ScanFrame>& frames, float dt, uint64_t tick,
                           Vec2 roomSize);
 

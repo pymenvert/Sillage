@@ -110,6 +110,42 @@ TEST(Pipeline, RelearnRequestIsAppliedAtTheNextTickOnly) {
     EXPECT_TRUE(pipeline.learning()) << "the next tick consumes the request";
 }
 
+// The pose hot-apply contract behind calibration: the background is learned
+// in each sensor's own polar frame, so replacing a pose must not reopen the
+// learning phase — and the same scan must fuse through the NEW pose. If a
+// pose change forced a re-learn, calibration would always end with "restart
+// the engine", i.e. re-learn the background in a room no longer empty.
+TEST(Pipeline, MovingASensorKeepsItsLearnedBackground) {
+    PipelineConfig cfg = twoSensorConfig();
+    Pipeline pipeline(cfg);
+    const Vec2 room{10.0f, 8.0f};
+
+    for (uint64_t tick = 0; tick < 10; ++tick) {
+        pipeline.process({wallScan(0, 4.0f)}, kDt, tick, room);
+    }
+    ASSERT_FALSE(pipeline.learning());
+    const auto before = pipeline.process({wallScan(0, 4.0f, /*withPerson=*/true)}, kDt, 10, room);
+    ASSERT_FALSE(before.foreground.empty());
+
+    // Move sensor 0 by +1 m in x. Same scan: still no re-learn, and every
+    // foreground point lands exactly 1 m to the right of where it did.
+    auto poses = cfg.sensors;
+    poses[0].position.x += 1.0f;
+    ASSERT_TRUE(pipeline.setSensorPoses(poses));
+    EXPECT_FALSE(pipeline.learning()) << "a pose change must never reopen learning";
+
+    const auto after = pipeline.process({wallScan(0, 4.0f, true)}, kDt, 11, room);
+    ASSERT_EQ(after.foreground.size(), before.foreground.size());
+    for (size_t i = 0; i < after.foreground.size(); ++i) {
+        EXPECT_NEAR(after.foreground[i].pos.x, before.foreground[i].pos.x + 1.0f, 1e-5f);
+        EXPECT_NEAR(after.foreground[i].pos.y, before.foreground[i].pos.y, 1e-5f);
+    }
+
+    // Adding/removing a sensor is a wiring change, not a pose change.
+    poses.push_back({{5.0f, 5.0f}, 0.0f});
+    EXPECT_FALSE(pipeline.setSensorPoses(poses));
+}
+
 // A double-click on the re-learn button must cost one reset, not two: the
 // second must not reopen a learning phase that the first already completed.
 TEST(Pipeline, RepeatedRelearnRequestsCollapseIntoOne) {

@@ -32,6 +32,23 @@
   « Ubuntu 22.04+ ». La CI ne pouvait pas le voir, sa matrice étant épinglée sur 22.04 ;
   elle couvre maintenant les deux LTS supportées.
 
+### Vers la calibration guidée
+- **Poses de capteurs appliquées à chaud** : modifier la pose d'un capteur (position,
+  angle) via `POST /api/config` ne demande plus de redémarrage — le fond appris, stocké
+  en polaire par capteur, survit tel quel. C'est le préalable qui rendait tout workflow
+  de calibration inutilisable : ajuster une pose se terminait par « redémarrez le
+  moteur », donc réapprendre le fond dans une salle qui n'est plus vide. Seul le
+  câblage (ajout/retrait/adresse d'un capteur) demande encore un redémarrage.
+- **Chaîne de calibration validée en CI sur le moteur réel** : un pipeline démarré avec
+  des poses volontairement fausses (50 cm, 11°), nourri au collecteur par l'avant-plan
+  fusionné (`SensorPose::toLocal`, inverse exact de la fusion), retrouve la vraie pose
+  à < 5 cm / 1,4°. Le solveur n'est plus seulement validé en isolation.
+- **Cliquets CI sur les scénarios** : `stress_50` reçoit de vraies portes MOT (mesuré
+  IDsw 197 / IDF1 0,546, verrouillé à 240 / 0,50) et `group_8_random` un **plafond de
+  quarantaine** (mesuré IDsw 15 / IDF1 0,633, plafond 20 / 0,58) : régresser au-delà
+  fait échouer la CI même en quarantaine, là où un skip inconditionnel laissait passer
+  n'importe quelle dégradation. `--eval` compte ces régressions dans son code de sortie.
+
 ### Spectacle vivant
 - **Dégradation par capteur** : chaque LiDAR apprend son fond indépendamment. Un capteur
   absent ou en panne réduit la couverture au lieu d'arrêter tout le moteur.

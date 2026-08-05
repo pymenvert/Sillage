@@ -33,6 +33,14 @@ void Pipeline::resetBackgrounds() {
     }
 }
 
+bool Pipeline::setSensorPoses(const std::vector<SensorPose>& poses) {
+    if (poses.size() != config_.sensors.size()) {
+        return false;
+    }
+    config_.sensors = poses;
+    return true;
+}
+
 FrameSnapshot Pipeline::process(const std::vector<ScanFrame>& frames, float dt, uint64_t tick,
                                 Vec2 roomSize) {
     FrameSnapshot snap;
