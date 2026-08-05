@@ -120,8 +120,14 @@ void Tracker::associate(const std::vector<int>& trackIdx, const std::vector<int>
             const float velMismatch = (implied - t.filter.velocity()).norm();
             // Staleness counts from the last real measurement (NOT the miss
             // counter, which shared-measurement freezing keeps at zero).
+            // The anchor is extrapolated along the last measured velocity: a
+            // person who entered a knot heading north-east most likely exits
+            // north-east, and after a second of freeze the un-extrapolated
+            // anchor points at where they entered, discriminating nothing.
+            // The decay stays — an extrapolation is still a guess that ages.
             const auto stale = static_cast<float>(tick - t.lastMeasuredTick);
-            const float continuity = (cluster.centroid - t.lastMeasuredPos).normSq() *
+            const Vec2 anchor = t.lastMeasuredPos + t.lastMeasuredVel * (stale * dt);
+            const float continuity = (cluster.centroid - anchor).normSq() *
                                      params_.continuityWeight / (1.0f + stale);
             cost[static_cast<size_t>(r) * cols + c] =
                 dm2 + params_.velocityPenalty * velMismatch + continuity;
@@ -147,6 +153,9 @@ std::vector<Track> Tracker::commit(const std::vector<Cluster>& clusters, float d
     // tracks feed no filter; their claimants coast without aging.
     std::vector<char> clusterShared(clusters.size(), 0);
     std::vector<char> trackFrozen(tracks_.size(), 0);
+    // The shared cluster each frozen track claims (nearest wins if several),
+    // for the confinement step after association.
+    std::vector<int> frozenCluster(tracks_.size(), -1);
     for (int c = 0; c < static_cast<int>(clusters.size()); ++c) {
         const Cluster& cluster = clusters[c];
         if (cluster.fromPredictionSplit) {
@@ -164,6 +173,12 @@ std::vector<Track> Tracker::commit(const std::vector<Cluster>& clusters, float d
             clusterShared[c] = 1;
             for (const size_t i : claimants) {
                 trackFrozen[i] = 1;
+                if (frozenCluster[i] < 0 ||
+                    (tracks_[i].filter.position() - cluster.centroid).norm() <
+                        (tracks_[i].filter.position() - clusters[frozenCluster[i]].centroid)
+                            .norm()) {
+                    frozenCluster[i] = c;
+                }
             }
         }
     }
@@ -236,6 +251,28 @@ std::vector<Track> Tracker::commit(const std::vector<Cluster>& clusters, float d
             }
         } else if (!trackFrozen[i]) {
             t.consecutiveMisses++;
+        }
+    }
+
+    // Confinement of frozen claimants (docs/03 §3 step 4): a track frozen in
+    // a shared blob got no measurement this tick, and its constant-velocity
+    // prediction keeps walking — through the other claimants and eventually
+    // out of the blob entirely, where its stale prediction seeds a ghost. The
+    // people ARE inside the blob (that is what made it shared), so the state
+    // is clamped to the blob's extent. Skipped for a frozen track that still
+    // matched some other cluster: that one has a real measurement.
+    for (size_t i = 0; i < tracks_.size(); ++i) {
+        if (trackFrozen[i] && trackToCluster[i] < 0 && frozenCluster[i] >= 0) {
+            const Cluster& blob = clusters[frozenCluster[i]];
+            // The bound must keep the track a CLAIMANT (strictly within
+            // radius + sharedCaptureMargin, small slack for the tangential
+            // drift the clamp does not remove), or the clamp parks it in a
+            // ring where the blob stops counting it: the freeze disengages
+            // next tick, one track captures the whole blob and the other
+            // coasts away — the exact escape confinement exists to prevent.
+            const float bound = std::min(blob.radius * params_.sharedConfineFactor,
+                                         blob.radius + params_.sharedCaptureMargin - 0.02f);
+            tracks_[i].filter.confineTo(blob.centroid, bound);
         }
     }
 

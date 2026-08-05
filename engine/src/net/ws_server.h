@@ -33,6 +33,9 @@ class WsHttpServer {
 public:
     static constexpr size_t kMaxClients = 32;
     static constexpr int kRecvTimeoutMs = 5000;
+    // How long the accept thread parks per iteration: also the upper bound on
+    // how long stop() waits for it to notice and retire.
+    static constexpr int kAcceptPollMs = 100;
     static constexpr size_t kMaxQueuedFrames = 120; // ~4 s at 30 Hz; drop-oldest beyond
 
     ~WsHttpServer();

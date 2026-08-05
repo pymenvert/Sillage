@@ -1,5 +1,7 @@
 #pragma once
 
+#include "calib/collector.h"
+#include "core/frame_hold.h"
 #include "core/types.h"
 #include "drivers/hokuyo/hokuyo_driver.h"
 #include "config/project.h"
@@ -75,7 +77,14 @@ private:
     std::string statusJson() const;
     std::string handleApi(const std::string& method, const std::string& path,
                           const std::string& body);
+    std::string handleCalibApi(const std::string& method, const std::string& path,
+                               const std::string& body);
     void applyPendingConfig(); // called at tick boundary only
+    // Tick thread, per tick. Only sensors that delivered a FRESH frame this
+    // tick feed the collector: a held (stale) scan of a moving walker would
+    // pair a stale center against another sensor's fresh one and eat into
+    // the RANSAC error budget for no gain.
+    void feedCalibration(const FrameSnapshot& snap, const std::vector<bool>& freshSensor);
 
     EngineConfig config_;
     std::unique_ptr<Simulator> simulator_; // null when simEnabled is false
@@ -92,6 +101,7 @@ private:
     net::WsHttpServer server_;
     ScanRecorder recorder_;
     ScanReplayer replayer_;
+    FrameHold frameHold_; // slow sensors contribute every tick, bounded by age
     std::atomic<bool> running_{false};
 
     // Live project state: read by the API thread, swapped at tick boundaries.
@@ -106,6 +116,25 @@ private:
     std::atomic<bool> showLocked_{false};
     std::atomic<bool> outputsMuted_{false};
 
+    // Walk-based auto-calibration (docs/04): the collector accumulates the
+    // walker's per-sensor observations on the tick thread; the HTTP thread
+    // starts/stops collection, solves on a COPY (so a multi-hundred-ms RANSAC
+    // never blocks a tick or races addObservation), and applies solved poses
+    // through the ordinary pendingConfig_ path — where they hot-apply, since
+    // a pose change is not a wiring change.
+    std::mutex calibMutex_;
+    std::unique_ptr<CalibrationCollector> calibCollector_; // null until start
+    bool calibCollecting_ = false;
+    std::vector<CalibrationCollector::SensorResult> calibResults_; // last solve
+
+    // Serializes POST /api/config writers end to end (persist to disk, then
+    // publish to the tick thread), so two concurrent writers cannot leave the
+    // file and the running engine on different versions. Deliberately separate
+    // from configMutex_: the disk write happens under this mutex only, so a
+    // slow save (project on a network share) can no longer stall the tick
+    // thread, which grabs configMutex_ every tick to check for pending config.
+    std::mutex configWriteMutex_;
+
     // Load stats, published on /api/status and the WS health payload.
     mutable std::mutex statsMutex_;
     uint64_t overruns_ = 0;
@@ -115,6 +144,7 @@ private:
     float tickMsMax_ = 0.0f;
     uint32_t tracksNow_ = 0;
     bool learning_ = true;
+    bool recordingFailed_ = false; // a .srec write failed (disk full); latched
 };
 
 } // namespace sillage

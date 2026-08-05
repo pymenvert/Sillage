@@ -47,11 +47,22 @@ public:
     // nullopt at end of file.
     std::optional<std::pair<uint64_t, std::vector<ScanFrame>>> nextTick();
 
+    // Timeline-faithful replay: the frames due at engine tick `engineTick`,
+    // where recorded ticks are rebased so the first record plays at tick 0.
+    // The recorder only writes ticks that had frames, so a live session with
+    // a 15 Hz sensor against a 60 Hz tick leaves 3-tick gaps — popping one
+    // record group per engine tick (nextTick) compresses that timeline 4x,
+    // and the replayed tracker sees velocities the live one never saw. An
+    // empty vector means "nothing was recorded for this tick", exactly like
+    // the live session; nullopt means the recording is over.
+    std::optional<std::vector<ScanFrame>> nextTickAt(uint64_t engineTick);
+
 private:
     std::optional<std::pair<uint64_t, ScanFrame>> readRecord();
 
     std::FILE* file_ = nullptr;
     std::optional<std::pair<uint64_t, ScanFrame>> pending_;
+    std::optional<uint64_t> firstTick_; // rebases the recorded timeline to 0
 };
 
 } // namespace sillage

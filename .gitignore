@@ -7,6 +7,10 @@ cmake-build-*/
 node_modules/
 vcpkg_installed/
 
+# Python bytecode (tools/bridges ships Python bridges)
+__pycache__/
+*.pyc
+
 # IDE / tooling caches
 .vs/
 .idea/

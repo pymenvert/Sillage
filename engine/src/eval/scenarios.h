@@ -29,10 +29,17 @@ struct Scenario {
     // Optional fault injection: sensors whose frames are dropped after a time.
     float sensorDropTime = -1.0f;
     SensorId droppedSensor = 0;
-    // Quarantined scenarios run and report but do not fail CI: the gate is a
-    // target not yet reached, tracked as an open M1 work item. Silence is not
-    // an option; neither is a red CI nobody trusts.
+    // Quarantined scenarios run and report but do not fail CI on their
+    // aspirational gates: the gate is a target not yet reached, tracked as an
+    // open M1 work item. Silence is not an option; neither is a red CI nobody
+    // trusts.
     bool quarantined = false;
+    // The ratchet that keeps quarantine honest: today's measured numbers plus
+    // margin. Breaching it means the tracker actually REGRESSED on this
+    // scenario — that fails CI even in quarantine. Without a ceiling, a
+    // quarantined scenario could drift from 15 ID switches to 200 without a
+    // single red pixel anywhere.
+    ScenarioGates quarantineCeiling{};
 };
 
 // The regression library. Every entry runs in CI; a failed gate fails the build.
@@ -43,9 +50,17 @@ struct ScenarioOutcome {
     MotResult metrics;
     bool passed = false;
     std::string failureReason;
+    // Quarantined scenarios only: whether the quarantine ceiling held.
+    // Non-quarantined scenarios leave this true.
+    bool ceilingHeld = true;
+    std::string ceilingReason;
     float avgTickUs = 0.0f; // pipeline cost, microseconds per tick
     float maxTickUs = 0.0f;
 };
+
+// Empty string when every enabled gate in `g` holds; otherwise the
+// "; "-joined failure reasons. Shared by the CI gates and --eval.
+std::string gateFailures(const MotResult& m, float avgTickUs, const ScenarioGates& g);
 
 // Runs one scenario headless at full speed. Deterministic.
 // debugTrace prints track births/deaths with ground truth context (docs/09:

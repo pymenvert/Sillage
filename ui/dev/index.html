@@ -70,7 +70,7 @@
     position: absolute; top: 70px; right: 14px; width: 250px;
     max-height: calc(100% - 96px);
     display: flex; flex-direction: column; gap: 10px;
-    z-index: 10; overflow-y: auto; scrollbar-width: none;
+    z-index: 10; overflow-y: auto; overflow-x: hidden; scrollbar-width: none;
   }
   section { padding: 12px 14px; flex: none; }
   section h2 {
@@ -165,6 +165,16 @@
     <h2>Personnes</h2>
     <div id="tracklist" style="max-height:22vh;overflow-y:auto"><div class="row dim">aucune</div></div>
   </section>
+  <section class="glass" id="calib-panel">
+    <h2>Calibration</h2>
+    <div id="calib-obs" class="row dim">inactif — une personne marche dans les recouvrements</div>
+    <div class="field" style="gap:5px">
+      <button id="calib-start" style="flex:1;min-width:0;padding:5px 4px;font-size:12px" title="Démarre la collecte : UNE seule personne marche lentement dans les zones vues par plusieurs capteurs">Collecter</button>
+      <button id="calib-solve" style="flex:1;min-width:0;padding:5px 4px;font-size:12px" disabled>Résoudre</button>
+      <button id="calib-apply" style="flex:1;min-width:0;padding:5px 4px;font-size:12px" disabled title="Écrit les poses résolues dans la configuration — appliquées à chaud, sans redémarrage">Appliquer</button>
+    </div>
+    <div id="calib-results" class="dim" style="font-size:11px;padding-top:4px;overflow-wrap:anywhere"></div>
+  </section>
   <section class="glass" id="zones-panel" style="display:none">
     <h2>Zones</h2>
     <div id="zonelist"></div>
@@ -176,11 +186,11 @@
   <section class="glass">
     <h2>Sorties</h2>
     <div class="field"><label>OSC Augmenta</label><input type="checkbox" id="c-osc-on"></div>
-    <div class="field"><input type="text" id="c-osc-host"><input type="number" class="short" id="c-osc-port"></div>
+    <div class="field"><input type="text" id="c-osc-host"><input type="number" class="short" id="c-osc-port" min="1" max="65535"></div>
     <div class="field"><label>TUIO</label><input type="checkbox" id="c-tuio-on"></div>
-    <div class="field"><input type="text" id="c-tuio-host"><input type="number" class="short" id="c-tuio-port"></div>
+    <div class="field"><input type="text" id="c-tuio-host"><input type="number" class="short" id="c-tuio-port" min="1" max="65535"></div>
     <div class="field"><label>ADM-OSC (audio)</label><input type="checkbox" id="c-adm-on"></div>
-    <div class="field"><input type="text" id="c-adm-host"><input type="number" class="short" id="c-adm-port"></div>
+    <div class="field"><input type="text" id="c-adm-host"><input type="number" class="short" id="c-adm-port" min="1" max="65535"></div>
     <h2 style="margin-top:10px">Conditionnement</h2>
     <div class="field"><label>prédiction <b id="c-pred-val">0</b> ms</label>
       <input type="range" id="c-pred" min="0" max="200" step="10" style="width:110px"></div>
@@ -481,6 +491,9 @@ function updateAlarm(h) {
   } else if (h.sensorsDown > 0) {
     msg = `⚠ CAPTEUR HORS LIGNE — ${h.sensorsDown}/${h.sensorsTotal} · couverture réduite`;
     cls = "warn";
+  } else if (h.recFailed) {
+    msg = "⚠ ENREGISTREMENT EN ÉCHEC (disque plein ?) — le .srec est tronqué";
+    cls = "warn";
   } else if (h.learning) {
     msg = "APPRENTISSAGE DU FOND — la salle doit être vide"; cls = "info";
   } else if (h.locked) {
@@ -516,6 +529,64 @@ el("btn-relearn").onclick = async () => {
   if (await showAction("/api/background/relearn")) {
     toast("Réapprentissage en cours — laissez la salle vide", true);
   }
+};
+
+// --- Calibration par marche (docs/04) : collecter → résoudre → appliquer ---
+// La collecte tourne côté moteur ; ici on ne fait que piloter les routes et
+// montrer les compteurs pour que le marcheur sache où la couverture manque.
+let calibPoll = null, calibSolved = false;
+function calibStopPolling() {
+  if (calibPoll) { clearInterval(calibPoll); calibPoll = null; }
+}
+el("calib-start").onclick = async () => {
+  const collecting = !!calibPoll;
+  if (collecting) {
+    await showAction("/api/calib/stop");
+    calibStopPolling();
+    el("calib-start").textContent = "Collecter";
+    return;
+  }
+  if (!(await showAction("/api/calib/start"))) return;
+  calibSolved = false;
+  el("calib-apply").disabled = true;
+  el("calib-results").textContent = "";
+  el("calib-start").textContent = "⏹ Arrêter";
+  calibPoll = setInterval(async () => {
+    try {
+      const s = await (await fetch("/api/calib/status")).json();
+      const obs = s.observations || [];
+      el("calib-obs").textContent = "observations : " + obs.join(" · ");
+      // 60 correspondances par paire suffisent au solveur ; on attend un peu
+      // plus pour de la marge avant d'ouvrir le bouton.
+      el("calib-solve").disabled = !obs.length || Math.min(...obs) < 80;
+    } catch { /* moteur momentanément injoignable : on retentera */ }
+  }, 500);
+};
+el("calib-solve").onclick = async () => {
+  try {
+    const r = await (await fetch("/api/calib/solve", { method: "POST", body: '{"anchor":0}' })).json();
+    if (!r.ok) { toast("Erreur : " + esc(r.error || ""), false); return; }
+    calibSolved = r.results.some((s) => s.solved);
+    el("calib-results").innerHTML = r.results.map((s) => {
+      const name = `capteur ${s.sensor}`;
+      if (!s.solved) return `<div>✗ ${name} — ${esc(s.message || "non résolu")}</div>`;
+      const deg = (s.theta * 180 / Math.PI).toFixed(1);
+      return `<div>✓ ${name} — (${s.x.toFixed(2)}, ${s.y.toFixed(2)}) m · ${deg}° · rmse ${(s.rmse * 100).toFixed(1)} cm</div>`;
+    }).join("");
+    el("calib-apply").disabled = !calibSolved;
+    if (calibSolved) toast("Poses résolues — vérifiez le rmse puis appliquez", true);
+  } catch { toast("Moteur injoignable", false); }
+};
+el("calib-apply").onclick = async () => {
+  try {
+    const r = await (await fetch("/api/calib/apply", { method: "POST" })).json();
+    if (!r.ok) { toast("Erreur : " + esc(r.error || ""), false); return; }
+    calibStopPolling();
+    el("calib-start").textContent = "Collecter";
+    el("calib-apply").disabled = true;
+    toast(r.applied ? `${r.applied} pose(s) appliquée(s) — sans redémarrage` :
+                      "Aucune pose à appliquer (capteurs simulés)", !!r.applied);
+  } catch { toast("Moteur injoignable", false); }
 };
 
 function updateSensors() {

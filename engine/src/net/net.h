@@ -62,6 +62,12 @@ public:
     bool listen(const std::string& bindHost, uint16_t port);
     // Blocking accept; returns kInvalidSocket on error/close.
     SocketHandle accept();
+    // Accept, but give up after timeoutMs and return kInvalidSocket so the
+    // caller can re-check its own run flag. Prefer this in a shutdown-able
+    // loop: closing the listener from another thread does NOT unblock a thread
+    // parked in accept() on Linux, so a blocking accept() there can only be
+    // left by an actual connection.
+    SocketHandle acceptFor(int timeoutMs);
     void close();
 
 private:

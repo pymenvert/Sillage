@@ -109,4 +109,20 @@ std::optional<std::pair<uint64_t, std::vector<ScanFrame>>> ScanReplayer::nextTic
     return std::pair{tick, std::move(frames)};
 }
 
+std::optional<std::vector<ScanFrame>> ScanReplayer::nextTickAt(uint64_t engineTick) {
+    if (!pending_) {
+        pending_ = readRecord();
+        if (!pending_) {
+            return std::nullopt; // recording over
+        }
+    }
+    if (!firstTick_) {
+        firstTick_ = pending_->first;
+    }
+    if (pending_->first - *firstTick_ > engineTick) {
+        return std::vector<ScanFrame>{}; // this tick had no frames when live
+    }
+    return std::move(nextTick()->second);
+}
+
 } // namespace sillage

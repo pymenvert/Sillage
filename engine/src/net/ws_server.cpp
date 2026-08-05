@@ -196,10 +196,17 @@ void WsHttpServer::stop() {
     if (!running_.exchange(false)) {
         return;
     }
-    listener_.close(); // unblocks accept()
+    // The accept thread owns the listener: it observes !running_ within one
+    // poll interval and returns on its own, and only then is the handle closed.
+    // Closing it here instead — the previous approach — both raced with the
+    // thread still using the handle and, on Linux, did not unblock a thread
+    // parked in accept() at all: stop() hung forever waiting on a join that
+    // could only complete if someone happened to connect. Windows and macOS do
+    // wake accept() on close, which is why this only ever hung on Linux.
     if (acceptThread_.joinable()) {
         acceptThread_.join();
     }
+    listener_.close();
     // Wake every client thread out of its wait so it can observe !running_ and
     // close its own socket. We never close a client socket from here — only its
     // owning thread does — which is what removes the use-after-close race.
@@ -243,9 +250,11 @@ void WsHttpServer::reapFinished() {
 
 void WsHttpServer::acceptLoop() {
     while (running_) {
-        const SocketHandle client = listener_.accept();
+        // Bounded wait, so stop() is observed within one interval even when no
+        // client ever connects. A plain accept() would park here indefinitely.
+        const SocketHandle client = listener_.acceptFor(kAcceptPollMs);
         if (client == kInvalidSocket) {
-            continue; // listener closed on stop(), loop exits via running_
+            continue; // timed out or listener closed; loop exits via running_
         }
         reapFinished();
         // Bound concurrent connections: refuse the excess instead of letting a

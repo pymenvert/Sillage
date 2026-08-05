@@ -75,6 +75,24 @@ TEST(Scip, ParseMDBlockRejectsAcknowledge) {
     EXPECT_FALSE(scip::parseMDBlock(ack).has_value());
 }
 
+// The default geometry describes a UST-10LX/20LX: 1081 steps spanning exactly
+// 270°, front at step 540. A resolution that disagrees with the step range
+// puts every point at the wrong bearing, and once the span passes 360° the
+// polar background bins alias onto the opposite bearing — people standing near
+// the room edges get subtracted away as background.
+TEST(Scip, DefaultGeometrySpans270Degrees) {
+    const scip::Geometry g;
+    constexpr float kPi = 3.14159265358979f;
+
+    EXPECT_NEAR(g.angleOfStep(g.frontStep), 0.0f, 1e-6f);
+    EXPECT_NEAR(g.angleOfStep(g.startStep), -0.75f * kPi, 1e-4f);
+    EXPECT_NEAR(g.angleOfStep(g.endStep), 0.75f * kPi, 1e-4f);
+
+    const float span = g.angleOfStep(g.endStep) - g.angleOfStep(g.startStep);
+    EXPECT_NEAR(span, 1.5f * kPi, 1e-4f);
+    EXPECT_LT(span, 2.0f * kPi) << "a span past a full turn aliases in the background bins";
+}
+
 // --- Driver integration against an in-process mock sensor ---------------------
 
 // Minimal SCIP 2.2 device: accepts one client, acknowledges BM/MD, then
@@ -200,8 +218,10 @@ TEST(HokuyoDriver, ReceivesAndDecodesFramesFromMockSensor) {
     const RangePoint front = frame->points[540];
     EXPECT_NEAR(front.angle, 0.0f, 1e-4f);
     EXPECT_NEAR(front.distance, 1.0f, 1e-3f);
-    // A step on the wall.
+    // A step on the wall, at its true bearing: step 100 is 440 steps before
+    // the front, i.e. -110° on a 0.25°/step sensor.
     EXPECT_NEAR(frame->points[100].distance, 2.0f, 1e-3f);
+    EXPECT_NEAR(frame->points[100].angle, -110.0f * 3.14159265358979f / 180.0f, 1e-4f);
 
     const SensorHealth health = driver.health();
     EXPECT_TRUE(health.connected);

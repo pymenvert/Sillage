@@ -22,6 +22,8 @@ cd build/windows-msvc && cpack -C Release
 
 Prérequis : CMake ≥ 3.24 et un compilateur C++20 (MSVC 2022, GCC 11+, AppleClang 14+).
 Aucune dépendance à installer — GoogleTest est téléchargé à la configuration.
+Sans accès réseau (ou derrière un proxy d'entreprise), ce téléchargement fait échouer
+la configuration entière : passez `-DBUILD_TESTING=OFF` pour construire le moteur seul.
 
 ```bash
 git clone <repo> sillage && cd sillage
@@ -173,9 +175,10 @@ sillage-engine --eval                      # bibliothèque de scénarios MOT + v
 sillage-engine --debug-scenario crossing_x # trace naissances/morts/échanges d'ID
 ```
 
-`--eval` retourne un code de sortie non nul si un gate non-quarantainé échoue — c'est la
-commande exécutée en CI. Chaque colonne : ID switches, MOTA, IDF1, misses, faux positifs,
-IDs distincts, pic de tracks simultanés.
+`--eval` retourne un code de sortie non nul si un gate non-quarantainé échoue. En CI,
+les mêmes scénarios tournent deux fois : comme tests ctest (un test par scénario) et via
+`--eval` dans l'étape de smoke. Chaque colonne : ID switches, MOTA, IDF1, misses, faux
+positifs, IDs distincts, pic de tracks simultanés.
 
 ## Recevoir les données dans vos logiciels
 
