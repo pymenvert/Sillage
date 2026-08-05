@@ -271,6 +271,7 @@ bool Engine::run() {
         }
 
         FrameSnapshot snap = pipeline_.process(frames, dt, tick, config_.roomSize);
+        feedCalibration(snap);
         if (!pipeline_.learning()) {
             // Published copy: conditioning applies to outputs, never to state.
             snap.tracks = conditioner_.apply(snap.tracks, dt);
@@ -451,7 +452,180 @@ std::string Engine::handleApi(const std::string& method, const std::string& path
                (restartRequired ? "true" : "false") +
                ",\"persisted\":" + (config_.projectPath.empty() ? "false" : "true") + "}";
     }
+    if (path.rfind("/api/calib/", 0) == 0) {
+        return handleCalibApi(method, path, body);
+    }
     return {};
+}
+
+// Walk-based auto-calibration over HTTP (docs/04): start collecting, watch
+// the observation counts grow while one person walks the overlaps, solve,
+// then apply. Collection happens on the tick thread (feedCalibration); these
+// handlers run on connection threads and only touch the collector under
+// calibMutex_. solve() runs on a COPY so its RANSAC never blocks a tick nor
+// races the tick thread's addObservation.
+std::string Engine::handleCalibApi(const std::string& method, const std::string& path,
+                                   const std::string& body) {
+    if (method == "POST" && path == "/api/calib/start") {
+        if (showLocked_.load()) {
+            return "{\"ok\":false,\"error\":\"show lock active\"}";
+        }
+        size_t sensorCount;
+        {
+            std::lock_guard lock(configMutex_);
+            sensorCount = sensorLayout().size();
+        }
+        std::lock_guard lock(calibMutex_);
+        calibCollector_ = std::make_unique<CalibrationCollector>(sensorCount);
+        calibCollecting_ = true;
+        calibResults_.clear();
+        return "{\"ok\":true,\"collecting\":true}";
+    }
+    if (method == "POST" && path == "/api/calib/stop") {
+        std::lock_guard lock(calibMutex_);
+        calibCollecting_ = false;
+        return "{\"ok\":true,\"collecting\":false}";
+    }
+    if (method == "GET" && path == "/api/calib/status") {
+        std::lock_guard lock(calibMutex_);
+        std::string out = std::string("{\"collecting\":") + (calibCollecting_ ? "true" : "false") +
+                          ",\"observations\":[";
+        if (calibCollector_) {
+            size_t count;
+            {
+                std::lock_guard cfg(configMutex_);
+                count = sensorLayout().size();
+            }
+            for (size_t s = 0; s < count; ++s) {
+                out += (s ? "," : "") +
+                       std::to_string(calibCollector_->observationCount(static_cast<SensorId>(s)));
+            }
+        }
+        out += std::string("],\"solved\":") + (calibResults_.empty() ? "false" : "true") + "}";
+        return out;
+    }
+    if (method == "POST" && path == "/api/calib/solve") {
+        size_t anchor = 0;
+        if (!body.empty()) {
+            const auto parsed = json::parse(body);
+            if (parsed.value) {
+                anchor = static_cast<size_t>((*parsed.value)["anchor"].asNumber(0.0));
+            }
+        }
+        std::vector<SensorPose> layout;
+        {
+            std::lock_guard lock(configMutex_);
+            layout = sensorLayout();
+        }
+        if (anchor >= layout.size()) {
+            return "{\"ok\":false,\"error\":\"anchor out of range\"}";
+        }
+        std::optional<CalibrationCollector> copy;
+        {
+            std::lock_guard lock(calibMutex_);
+            if (!calibCollector_) {
+                return "{\"ok\":false,\"error\":\"start collection first\"}";
+            }
+            copy = *calibCollector_; // solve outside the lock, on the copy
+        }
+        // Anchored to the anchor sensor's CURRENT believed pose, so solved
+        // poses land in the room frame the operator already works in.
+        auto results = copy->solve(static_cast<SensorId>(anchor), layout[anchor]);
+        std::string out = "{\"ok\":true,\"results\":[";
+        char buf[160];
+        for (size_t s = 0; s < results.size(); ++s) {
+            const auto& r = results[s];
+            std::snprintf(buf, sizeof(buf),
+                          "%s{\"sensor\":%zu,\"solved\":%s,\"x\":%.4f,\"y\":%.4f,"
+                          "\"theta\":%.5f,\"rmse\":%.4f,\"pairs\":%u,\"message\":",
+                          s ? "," : "", s, r.solved ? "true" : "false",
+                          static_cast<double>(r.pose.position.x),
+                          static_cast<double>(r.pose.position.y),
+                          static_cast<double>(r.pose.theta), static_cast<double>(r.rmse),
+                          r.pairs);
+            out += buf;
+            appendJsonString(out, r.message);
+            out += '}';
+        }
+        {
+            std::lock_guard lock(calibMutex_);
+            calibResults_ = std::move(results);
+        }
+        return out + "]}";
+    }
+    if (method == "POST" && path == "/api/calib/apply") {
+        if (showLocked_.load()) {
+            return "{\"ok\":false,\"error\":\"show lock active\"}";
+        }
+        std::vector<CalibrationCollector::SensorResult> results;
+        {
+            std::lock_guard lock(calibMutex_);
+            if (calibResults_.empty()) {
+                return "{\"ok\":false,\"error\":\"solve first\"}";
+            }
+            results = calibResults_;
+        }
+        // Solved poses go through the ordinary pendingConfig_ path: persisted
+        // like any config edit, hot-applied at the next tick (a pose change is
+        // not a wiring change). Demo-mode sim sensors occupy the first layout
+        // slots but have no project entry to persist — only real sensors are
+        // applied; index j in the project maps to layout slot simSensors + j.
+        std::lock_guard writer(configWriteMutex_);
+        ProjectConfig incoming;
+        size_t applied = 0;
+        {
+            std::lock_guard lock(configMutex_);
+            incoming = project_;
+            const size_t simSensors = config_.simEnabled ? 2 : 0;
+            for (size_t j = 0; j < incoming.sensors.size(); ++j) {
+                const size_t slot = simSensors + j;
+                if (slot < results.size() && results[slot].solved) {
+                    incoming.sensors[j].pose = results[slot].pose;
+                    ++applied;
+                }
+            }
+        }
+        if (applied == 0) {
+            return "{\"ok\":true,\"applied\":0}";
+        }
+        if (!config_.projectPath.empty()) {
+            std::string saveError;
+            if (!incoming.save(config_.projectPath, saveError)) {
+                std::string out = "{\"ok\":false,\"error\":";
+                appendJsonString(out, saveError);
+                return out + "}";
+            }
+        }
+        {
+            std::lock_guard lock(configMutex_);
+            pendingConfig_ = std::move(incoming);
+        }
+        return "{\"ok\":true,\"applied\":" + std::to_string(applied) +
+               ",\"persisted\":" + (config_.projectPath.empty() ? "false" : "true") + "}";
+    }
+    return {};
+}
+
+// Tick thread: while collecting, rebuild each sensor's local observation of
+// the walker from the fused room-frame foreground. toLocal inverts the exact
+// transform fusion applied, so the collector sees true sensor-local data even
+// while the pipeline is running on poses that are wrong — which is the whole
+// point: calibration runs BEFORE the poses are right.
+void Engine::feedCalibration(const FrameSnapshot& snap) {
+    std::lock_guard lock(calibMutex_);
+    if (!calibCollecting_ || !calibCollector_) {
+        return;
+    }
+    const auto layout = sensorLayout(); // tick thread owns these poses
+    std::vector<std::vector<Vec2>> local(layout.size());
+    for (const WorldPoint& p : snap.foreground) {
+        if (p.sensor < layout.size()) {
+            local[p.sensor].push_back(layout[p.sensor].toLocal(p.pos));
+        }
+    }
+    for (size_t s = 0; s < local.size(); ++s) {
+        calibCollector_->addObservation(static_cast<SensorId>(s), snap.tick, local[s]);
+    }
 }
 
 void Engine::applyPendingConfig() {
@@ -500,13 +674,16 @@ void Engine::applyPendingConfig() {
     config_.conditioning.predictionSeconds = pending->predictionSeconds;
     config_.conditioning.smoothing = pending->smoothing;
 
+    std::lock_guard lock(configMutex_);
     // Sensor poses hot-apply when the wiring is unchanged: this runs on the
-    // tick thread, the same thread that reads the poses, and the per-sensor
-    // polar background survives a pose change untouched. This is the path a
-    // calibration workflow needs — "adjust the pose" must never mean "restart
-    // the engine and re-learn the background in a room that is no longer
-    // empty". A wiring change (sensor added/removed/re-addressed) keeps the
-    // old runtime sensors until restart, as before.
+    // tick thread, the same thread that fuses through the poses, and the
+    // per-sensor polar background survives a pose change untouched. This is
+    // the path a calibration workflow needs — "adjust the pose" must never
+    // mean "restart the engine and re-learn the background in a room that is
+    // no longer empty". A wiring change (sensor added/removed/re-addressed)
+    // keeps the old runtime sensors until restart, as before. Under
+    // configMutex_ because the calibration API reads these poses from
+    // connection threads.
     const bool wiringUnchanged = !sensorWiringDiffers(pending->sensors, config_.sensors);
     if (wiringUnchanged) {
         for (size_t i = 0; i < config_.sensors.size(); ++i) {
@@ -514,8 +691,6 @@ void Engine::applyPendingConfig() {
         }
         pipeline_.setSensorPoses(sensorLayout());
     }
-
-    std::lock_guard lock(configMutex_);
     // Runtime geometry stays as-is until restart; record the rest as truth.
     // With unchanged wiring the pending sensors ARE the runtime sensors
     // (poses just hot-applied above), so they stay; otherwise the old ones

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "calib/collector.h"
 #include "core/types.h"
 #include "drivers/hokuyo/hokuyo_driver.h"
 #include "config/project.h"
@@ -75,7 +76,10 @@ private:
     std::string statusJson() const;
     std::string handleApi(const std::string& method, const std::string& path,
                           const std::string& body);
+    std::string handleCalibApi(const std::string& method, const std::string& path,
+                               const std::string& body);
     void applyPendingConfig(); // called at tick boundary only
+    void feedCalibration(const FrameSnapshot& snap); // tick thread, per tick
 
     EngineConfig config_;
     std::unique_ptr<Simulator> simulator_; // null when simEnabled is false
@@ -105,6 +109,17 @@ private:
     // the UI keeps updating, but nothing is emitted downstream.
     std::atomic<bool> showLocked_{false};
     std::atomic<bool> outputsMuted_{false};
+
+    // Walk-based auto-calibration (docs/04): the collector accumulates the
+    // walker's per-sensor observations on the tick thread; the HTTP thread
+    // starts/stops collection, solves on a COPY (so a multi-hundred-ms RANSAC
+    // never blocks a tick or races addObservation), and applies solved poses
+    // through the ordinary pendingConfig_ path — where they hot-apply, since
+    // a pose change is not a wiring change.
+    std::mutex calibMutex_;
+    std::unique_ptr<CalibrationCollector> calibCollector_; // null until start
+    bool calibCollecting_ = false;
+    std::vector<CalibrationCollector::SensorResult> calibResults_; // last solve
 
     // Serializes POST /api/config writers end to end (persist to disk, then
     // publish to the tick thread), so two concurrent writers cannot leave the

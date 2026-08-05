@@ -33,6 +33,14 @@
   elle couvre maintenant les deux LTS supportées.
 
 ### Vers la calibration guidée
+- **API de calibration** : `POST /api/calib/start` (collecte pendant qu'une personne
+  marche dans les recouvrements), `GET /api/calib/status` (compteurs d'observations par
+  capteur), `POST /api/calib/solve` (résolution ancrée sur la pose courante d'un capteur,
+  exécutée sur une copie — jamais sur le chemin du tick), `POST /api/calib/apply` (poses
+  résolues persistées et appliquées à chaud via le chemin de configuration ordinaire).
+  Gardées par le verrou show. Testé de bout en bout en CI : deux drivers UDP réels, pose
+  du capteur 2 fausse de 50 cm / 11°, récupérée à < 6 cm par requêtes HTTP, visible sur
+  `/api/config` sans redémarrage.
 - **Poses de capteurs appliquées à chaud** : modifier la pose d'un capteur (position,
   angle) via `POST /api/config` ne demande plus de redémarrage — le fond appris, stocké
   en polaire par capteur, survit tel quel. C'est le préalable qui rendait tout workflow

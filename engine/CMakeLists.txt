@@ -69,6 +69,7 @@ if(BUILD_TESTING)
 
     add_executable(sillage_tests
         tests/api_test.cpp
+        tests/calib_api_test.cpp
         tests/calib_test.cpp
         tests/clustering_test.cpp
         tests/config_zones_test.cpp
