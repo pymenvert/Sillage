@@ -41,6 +41,20 @@ struct TrackerParams {
     // walking 40 cm away must not freeze anybody.
     float sharedCaptureMargin = 0.15f;
 
+    // Frozen claimants stay within the shared cluster's extent (docs/03 §3
+    // step 4): unconfined, their constant-velocity predictions walk straight
+    // through the blob — crossing each other inside it, or exiting where no
+    // person is and spawning a ghost track for a 9th person in a room of 8.
+    // Factor on the cluster radius, additionally capped so a clamped track
+    // always remains a claimant (see the confinement step in commit()).
+    // Measured 2026-08 on the CI scenarios: 1.35 takes group_8_random from
+    // IDsw 15 / IDF1 0.633 / FP 329 / 10 ids to 10 / 0.759 / 71 / 8 — the
+    // ghost 9th person disappears entirely. The freeze+confine machinery
+    // costs stress_50 about 0.035 IDF1 regardless of the factor (its gates
+    // record that accepted trade); larger factors give that cost back
+    // without buying anything in the knot scenario.
+    float sharedConfineFactor = 1.35f;
+
     // Re-identification graves (docs/03 §7). The window counts from the last
     // real measurement (which precedes death by the whole coasting phase).
     uint32_t graveTicks = 300;       // how long a dead id waits for its owner (5s @60Hz)

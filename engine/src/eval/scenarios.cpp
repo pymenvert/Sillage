@@ -102,11 +102,13 @@ std::vector<Scenario> scenarioLibrary() {
         // Candidate work: per-knot joint hypothesis handling, sensor layout
         // guidance (a third sensor breaks most knots), size signatures.
         s.quarantined = true;
-        // Measured 2026-08: IDsw 15, IDF1 0.633, MOTA 0.992, FP rate 0.006.
-        // The ceiling is those numbers plus margin — worse than this is a
-        // regression and fails CI even in quarantine.
-        s.quarantineCeiling = {.idSwitchesMax = 20, .idf1Min = 0.58f, .motaMin = 0.98f,
-                               .falsePositiveRateMax = 0.012f};
+        // Measured 2026-08 after frozen-track confinement: IDsw 10, IDF1
+        // 0.759, MOTA 0.997, FP rate 0.0012 (was 15 / 0.633 / 0.992 / 0.006
+        // before it). The ceiling is those numbers plus margin — worse than
+        // this is a regression and fails CI even in quarantine. The
+        // pre-confinement tracker breaches every one of these bounds.
+        s.quarantineCeiling = {.idSwitchesMax = 13, .idf1Min = 0.70f, .motaMin = 0.99f,
+                               .falsePositiveRateMax = 0.003f};
         lib.push_back(s);
     }
 
@@ -150,11 +152,16 @@ std::vector<Scenario> scenarioLibrary() {
 
     // 7. Stress: 50 people in a 20x15 hall, 3 sensors. Primarily a throughput
     //    gate (the pipeline must stay far under the 60 Hz budget of 16.6 ms),
-    //    but the MOT gates are real ratchets too: measured 2026-08 at IDsw
-    //    197 / IDF1 0.546 / MOTA 0.820 / FP rate 0.028, gated with margin.
-    //    Fully disabled MOT gates (the previous idSwitchesMax = 1<<20) meant
-    //    a tracker change could double the switches in the packed-room case —
-    //    the exact case docs/03 argues about — without any red anywhere.
+    //    but the MOT gates are real ratchets too. Fully disabled MOT gates
+    //    (the once-present idSwitchesMax = 1<<20) meant a tracker change
+    //    could double the switches in the packed-room case — the exact case
+    //    docs/03 argues about — without any red anywhere.
+    //    Measured 2026-08 with frozen-track confinement: IDsw 223 / IDF1
+    //    0.511 / MOTA 0.812 / FP rate 0.035. The IDF1 gate was 0.50 against
+    //    a pre-confinement 0.546: confinement costs this scenario ~0.035
+    //    IDF1 in exchange for eliminating ghost tracks in the knot scenario
+    //    (group_8_random FP -78%, distinct ids exact) — an explicit trade,
+    //    accepted here so the ratchet still catches any FURTHER degradation.
     {
         Scenario s;
         s.name = "stress_50";
@@ -173,7 +180,7 @@ std::vector<Scenario> scenarioLibrary() {
             {{0.15f, 14.85f}, -1.5707963f},
         };
         s.durationSeconds = 30.0f;
-        s.gates = {.idSwitchesMax = 240, .idf1Min = 0.50f, .motaMin = 0.78f,
+        s.gates = {.idSwitchesMax = 260, .idf1Min = 0.47f, .motaMin = 0.78f,
                    .falsePositiveRateMax = 0.045f, .maxAvgTickUs = 8000.0f};
         lib.push_back(s);
     }

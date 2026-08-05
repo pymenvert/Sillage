@@ -47,6 +47,22 @@
   « Ubuntu 22.04+ ». La CI ne pouvait pas le voir, sa matrice étant épinglée sur 22.04 ;
   elle couvre maintenant les deux LTS supportées.
 
+### Tracking en foule dense (chantier M1, première tranche)
+- **Confinement des tracks gelés** (docs/03 §3 étape 4, enfin implémenté) : dans un
+  nœud d'occultation mutuelle, les tracks gelés restaient sur leur prédiction à vitesse
+  constante — ils se traversaient dans le blob, en ressortaient inversés, ou en
+  sortaient là où il n'y a personne et y semaient un **9ᵉ track fantôme dans une salle
+  de 8** (soit une cue de zone qui part sur personne). Ils sont désormais confinés à
+  l'emprise du blob (position bornée, vitesse d'évasion supprimée — le prior de
+  direction vit dans l'ancre de continuité, elle extrapolée par la dernière vitesse
+  mesurée). Sur `group_8_random` : échanges d'ID 15→10, IDF1 0,633→**0,759**, faux
+  positifs **−78 %**, et exactement 8 identités pour 8 personnes. Les 4 scénarios
+  sains restent à 0 échange.
+- **Le plafond de quarantaine est resserré sur les nouveaux chiffres** : revenir au
+  tracker d'avant fait échouer la CI sur trois portes. Coût assumé et documenté :
+  ~0,035 IDF1 sur `stress_50` (50 personnes), dont les portes enregistrent l'échange —
+  toute dégradation *supplémentaire* reste bloquante.
+
 ### Vers la calibration guidée
 - **Panneau de calibration dans l'UI** : collecter (compteurs d'observations par capteur
   en direct, pour guider le marcheur), résoudre (résultats par capteur : position, angle,

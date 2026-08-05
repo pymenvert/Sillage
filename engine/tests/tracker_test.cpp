@@ -120,5 +120,50 @@ TEST(Tracker, CrossingAgentsKeepTheirIds) {
     EXPECT_NEAR(endB.position.x, 2.0f, 0.3f);
 }
 
+// Frozen claimants must stay within the shared blob (docs/03 §3 step 4).
+// Two confirmed tracks walk into each other and the detector hands the
+// tracker ONE unsplit blob: both freeze. Unconfined, their constant-velocity
+// predictions keep walking — through each other and out of the blob, where a
+// stale prediction later seeds a ghost track (a 9th person in a room of 8,
+// i.e. a zone cue firing on nobody). Confinement clamps them to the blob's
+// extent for as long as the knot lasts.
+TEST(Tracker, FrozenClaimantsStayInsideTheSharedBlob) {
+    TrackerParams params;
+    Tracker tracker(params);
+    const float dt = 1.0f / 60.0f;
+    const float speed = 1.0f;
+    const Vec2 meet{3.0f, 2.0f};
+
+    // Phase 1: two people converge head-on until 0.5 m apart — separate
+    // clusters, both tracks confirmed, velocities pointing at each other.
+    uint64_t tick = 0;
+    std::vector<Track> out;
+    for (float gap = 2.5f; gap > 0.5f; gap -= 2.0f * speed * dt, ++tick) {
+        out = tracker.update({clusterAt({meet.x - gap / 2.0f, meet.y}),
+                              clusterAt({meet.x + gap / 2.0f, meet.y})},
+                             dt, tick);
+    }
+    ASSERT_EQ(out.size(), 2u) << "both tracks must be confirmed before the knot";
+
+    // Phase 2: one unsplit blob for a full second. Both tracks freeze; their
+    // predictions want to keep crossing at ~1 m/s each — unconfined they end
+    // ~1 m past the blob on each side.
+    Cluster blob;
+    blob.centroid = meet;
+    blob.radius = 0.35f;
+    blob.pointCount = 40;
+    const float bound = std::min(blob.radius * params.sharedConfineFactor,
+                                 blob.radius + params.sharedCaptureMargin) +
+                        0.05f;
+    for (int i = 0; i < 60; ++i, ++tick) {
+        out = tracker.update({blob}, dt, tick);
+        ASSERT_EQ(out.size(), 2u) << "the knot must neither kill a track nor birth a ghost";
+        for (const Track& t : out) {
+            EXPECT_LE((t.position - meet).norm(), bound)
+                << "tick " << i << ": a frozen track escaped the blob";
+        }
+    }
+}
+
 } // namespace
 } // namespace sillage

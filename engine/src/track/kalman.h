@@ -3,6 +3,7 @@
 #include "core/types.h"
 
 #include <array>
+#include <cmath>
 
 namespace sillage {
 
@@ -112,6 +113,46 @@ public:
     Vec2 position() const { return {x_[0], x_[1]}; }
     Vec2 velocity() const { return {x_[2], x_[3]}; }
     float positionVariance() const { return 0.5f * (p_[idx(0, 0)] + p_[idx(1, 1)]); }
+
+    // Clamps the state's position into the disc (center, maxRadius). Used on
+    // tracks frozen inside a shared cluster: their filters receive no
+    // measurement, and pure constant-velocity prediction walks them out of
+    // the physical blob (crossing each other inside it, or exiting where no
+    // person is). The displacement is admitted into the position covariance —
+    // forcing x while leaving P intact would make the filter overconfident
+    // about a position it was pushed to, and the next real measurement would
+    // be under-weighted exactly when it matters most (at separation).
+    void confineTo(Vec2 center, float maxRadius) {
+        const float dx = x_[0] - center.x;
+        const float dy = x_[1] - center.y;
+        const float dist = std::sqrt(dx * dx + dy * dy);
+        if (dist <= maxRadius || maxRadius < 0.0f || dist <= 1e-6f) {
+            return;
+        }
+        const float scale = maxRadius / dist;
+        const float jx = dx * (scale - 1.0f); // applied displacement
+        const float jy = dy * (scale - 1.0f);
+        x_[0] += jx;
+        x_[1] += jy;
+        p_[idx(0, 0)] += jx * jx;
+        p_[idx(1, 1)] += jy * jy;
+        // Also drop the OUTWARD radial velocity, admitting it into the
+        // velocity covariance. The person this state stands for is inside the
+        // blob — that is what made it shared — so an escape velocity is
+        // fiction, and left in place it re-integrates the same escape every
+        // tick, racing the clamp forever. The direction prior for
+        // re-association at separation is not lost: it lives in the
+        // continuity anchor (last MEASURED velocity), which confinement
+        // never touches.
+        const float ux = dx / dist, uy = dy / dist;
+        const float vOut = x_[2] * ux + x_[3] * uy;
+        if (vOut > 0.0f) {
+            x_[2] -= vOut * ux;
+            x_[3] -= vOut * uy;
+            p_[idx(2, 2)] += vOut * vOut * ux * ux;
+            p_[idx(3, 3)] += vOut * vOut * uy * uy;
+        }
+    }
 
 private:
     static constexpr int idx(int row, int col) { return row * 4 + col; }
