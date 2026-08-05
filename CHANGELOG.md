@@ -4,6 +4,12 @@
 
 ### Corrections
 
+- **Replay fidèle à la chronologie enregistrée**. L'enregistreur n'écrit que les ticks
+  ayant reçu des trames ; le replay consommait un groupe par tick moteur en jetant le
+  numéro de tick enregistré, compressant les trous — une session avec un capteur 15 Hz
+  face à un tick 60 Hz se rejouait 4× trop vite, avec des vitesses que le direct n'a
+  jamais vues. Les ticks vides du direct se rejouent désormais vides ; les
+  enregistrements denses sont inchangés (déterminisme verrouillé par test).
 - **Hokuyo : géométrie du balayage corrigée**. La résolution angulaire par défaut était
   celle d'un URG-04LX (2π/1024) alors que la plage de pas décrit un UST-10LX/20LX, ce qui
   étalait 1081 pas sur **379,7° au lieu de 270°**. Deux conséquences sur un vrai capteur —
@@ -33,6 +39,11 @@
   elle couvre maintenant les deux LTS supportées.
 
 ### Vers la calibration guidée
+- **Panneau de calibration dans l'UI** : collecter (compteurs d'observations par capteur
+  en direct, pour guider le marcheur), résoudre (résultats par capteur : position, angle,
+  rmse en cm — ou le message d'échec du solveur), appliquer (à chaud, sans redémarrage).
+  Vérifié en conditions réelles avec un navigateur piloté (rendu, garde des boutons,
+  chemins d'erreur).
 - **API de calibration** : `POST /api/calib/start` (collecte pendant qu'une personne
   marche dans les recouvrements), `GET /api/calib/status` (compteurs d'observations par
   capteur), `POST /api/calib/solve` (résolution ancrée sur la pose courante d'un capteur,
