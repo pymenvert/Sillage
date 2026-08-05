@@ -4,6 +4,15 @@
 
 ### Corrections
 
+- **Un capteur plus lent que le tick produit enfin des tracks**. Un SICK TiM tourne à
+  15 Hz face au tick 60 Hz : ses détections arrivaient avec 3 ticks de trou, la probation
+  du tracker (`tentativeMaxMiss`) tuait chaque piste avant confirmation — une salle
+  couverte uniquement de capteurs lents ne trackait **personne** (reproduit en test :
+  capteur connecté, 15 Hz, zéro erreur, zéro track). Le moteur re-présente désormais le
+  dernier scan de chaque capteur entre deux révolutions, borné à 250 ms : un capteur
+  débranché cesse de contribuer dans ce délai au lieu de figer un fantôme. La fusion
+  multi-capteurs cesse au passage de scintiller au rythme du capteur le plus lent, et la
+  calibration n'est nourrie que des trames fraîches.
 - **Replay fidèle à la chronologie enregistrée**. L'enregistreur n'écrit que les ticks
   ayant reçu des trames ; le replay consommait un groupe par tick moteur en jetant le
   numéro de tick enregistré, compressant les trous — une session avec un capteur 15 Hz

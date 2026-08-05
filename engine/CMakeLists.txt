@@ -80,6 +80,7 @@ if(BUILD_TESTING)
         tests/pipeline_test.cpp
         tests/recorder_test.cpp
         tests/scenarios_test.cpp
+        tests/slow_sensor_test.cpp
         tests/tracker_test.cpp
         tests/ws_handshake_test.cpp
     )

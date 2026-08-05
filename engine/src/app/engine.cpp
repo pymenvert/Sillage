@@ -274,8 +274,24 @@ bool Engine::run() {
             }
         }
 
+        // Which sensors delivered fresh data this tick — calibration only
+        // trusts these. Computed before the hold, which appends stale copies.
+        std::vector<bool> freshSensor(sensorLayout().size(), false);
+        for (const ScanFrame& frame : frames) {
+            if (frame.sensor < freshSensor.size()) {
+                freshSensor[frame.sensor] = true;
+            }
+        }
+        // After recording, before processing: the .srec keeps only fresh
+        // frames (replay re-holds them identically), while fusion and the
+        // tracker see every sensor every tick — a 15 Hz sensor otherwise
+        // yields detections with 3-tick gaps, and tentativeMaxMiss kills
+        // every probationary track before its confirmHits-th hit: a room
+        // covered by slow sensors alone tracks nobody at all.
+        frameHold_.augment(frames, tick, dt);
+
         FrameSnapshot snap = pipeline_.process(frames, dt, tick, config_.roomSize);
-        feedCalibration(snap);
+        feedCalibration(snap, freshSensor);
         if (!pipeline_.learning()) {
             // Published copy: conditioning applies to outputs, never to state.
             snap.tracks = conditioner_.apply(snap.tracks, dt);
@@ -615,7 +631,7 @@ std::string Engine::handleCalibApi(const std::string& method, const std::string&
 // transform fusion applied, so the collector sees true sensor-local data even
 // while the pipeline is running on poses that are wrong — which is the whole
 // point: calibration runs BEFORE the poses are right.
-void Engine::feedCalibration(const FrameSnapshot& snap) {
+void Engine::feedCalibration(const FrameSnapshot& snap, const std::vector<bool>& freshSensor) {
     std::lock_guard lock(calibMutex_);
     if (!calibCollecting_ || !calibCollector_) {
         return;
@@ -623,12 +639,14 @@ void Engine::feedCalibration(const FrameSnapshot& snap) {
     const auto layout = sensorLayout(); // tick thread owns these poses
     std::vector<std::vector<Vec2>> local(layout.size());
     for (const WorldPoint& p : snap.foreground) {
-        if (p.sensor < layout.size()) {
+        if (p.sensor < layout.size() && p.sensor < freshSensor.size() && freshSensor[p.sensor]) {
             local[p.sensor].push_back(layout[p.sensor].toLocal(p.pos));
         }
     }
     for (size_t s = 0; s < local.size(); ++s) {
-        calibCollector_->addObservation(static_cast<SensorId>(s), snap.tick, local[s]);
+        if (s < freshSensor.size() && freshSensor[s]) {
+            calibCollector_->addObservation(static_cast<SensorId>(s), snap.tick, local[s]);
+        }
     }
 }
 

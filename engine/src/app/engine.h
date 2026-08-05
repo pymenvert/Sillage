@@ -1,6 +1,7 @@
 #pragma once
 
 #include "calib/collector.h"
+#include "core/frame_hold.h"
 #include "core/types.h"
 #include "drivers/hokuyo/hokuyo_driver.h"
 #include "config/project.h"
@@ -79,7 +80,11 @@ private:
     std::string handleCalibApi(const std::string& method, const std::string& path,
                                const std::string& body);
     void applyPendingConfig(); // called at tick boundary only
-    void feedCalibration(const FrameSnapshot& snap); // tick thread, per tick
+    // Tick thread, per tick. Only sensors that delivered a FRESH frame this
+    // tick feed the collector: a held (stale) scan of a moving walker would
+    // pair a stale center against another sensor's fresh one and eat into
+    // the RANSAC error budget for no gain.
+    void feedCalibration(const FrameSnapshot& snap, const std::vector<bool>& freshSensor);
 
     EngineConfig config_;
     std::unique_ptr<Simulator> simulator_; // null when simEnabled is false
@@ -96,6 +101,7 @@ private:
     net::WsHttpServer server_;
     ScanRecorder recorder_;
     ScanReplayer replayer_;
+    FrameHold frameHold_; // slow sensors contribute every tick, bounded by age
     std::atomic<bool> running_{false};
 
     // Live project state: read by the API thread, swapped at tick boundaries.

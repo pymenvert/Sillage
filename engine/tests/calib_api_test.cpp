@@ -1,6 +1,5 @@
-#include "app/engine.h"
 #include "core/json.h"
-#include "net/net.h"
+#include "e2e_util.h"
 #include "sim/simulator.h"
 
 #include <gtest/gtest.h>
@@ -8,7 +7,6 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
-#include <cstdio>
 #include <filesystem>
 #include <numbers>
 #include <string>
@@ -20,51 +18,9 @@ namespace {
 
 constexpr float kPi = std::numbers::pi_v<float>;
 
-// Raw HTTP against the live engine, one request per connection (the server
-// closes after responding, so recv-to-EOF frames the response).
-std::string request(uint16_t port, const std::string& method, const std::string& path,
-                    const std::string& body = {}) {
-    const net::SocketHandle s = net::tcpConnect("127.0.0.1", port, 2000);
-    if (s == net::kInvalidSocket) {
-        return {};
-    }
-    std::string raw = method + " " + path + " HTTP/1.1\r\nHost: x\r\n";
-    if (!body.empty()) {
-        raw += "Content-Length: " + std::to_string(body.size()) + "\r\n";
-    }
-    raw += "\r\n" + body;
-    net::tcpSendAll(s, raw.data(), raw.size());
-    std::string response;
-    char buf[4096];
-    int n;
-    while ((n = net::tcpRecv(s, buf, sizeof(buf))) > 0) {
-        response.append(buf, static_cast<size_t>(n));
-    }
-    net::tcpClose(s);
-    return response;
-}
-
-// Body of an HTTP response (everything after the blank line).
-std::string bodyOf(const std::string& response) {
-    const size_t split = response.find("\r\n\r\n");
-    return split == std::string::npos ? std::string{} : response.substr(split + 4);
-}
-
-// A simulator ScanFrame as a UDP-bridge datagram. Dropped rays become 0 mm
-// entries — the bridge's no-return convention — so spacing stays uniform.
-std::string toDatagram(const ScanFrame& frame, uint32_t rays) {
-    const float da = 2.0f * kPi / static_cast<float>(rays);
-    std::vector<int> mm(rays, 0);
-    for (const RangePoint& p : frame.points) {
-        const auto idx = static_cast<size_t>(std::lround(p.angle / da)) % rays;
-        mm[idx] = static_cast<int>(p.distance * 1000.0f);
-    }
-    std::string out = "{\"a0\":0,\"da\":" + std::to_string(da) + ",\"d\":[";
-    for (size_t i = 0; i < mm.size(); ++i) {
-        out += (i ? "," : "") + std::to_string(mm[i]);
-    }
-    return out + "]}";
-}
+using e2e::bodyOf;
+using e2e::request;
+using e2e::toDatagram;
 
 // The full product path of the calibration workflow, end to end: two REAL
 // udp-bridge drivers fed by a one-walker simulator scanning from the TRUE
@@ -90,30 +46,8 @@ TEST(CalibApi, RecoversWrongPoseOverHttpEndToEnd) {
     cfg.uiRoot = std::filesystem::temp_directory_path() / "sillage_calib_api_ui";
     std::filesystem::create_directories(cfg.uiRoot);
 
-    // The engine owns port selection failures: scan a small range.
-    uint16_t httpPort = 0;
-    std::unique_ptr<Engine> engine;
-    std::thread engineThread;
-    for (uint16_t p = 19350; p < 19370 && !engine; ++p) {
-        cfg.httpPort = p;
-        auto candidate = std::make_unique<Engine>(cfg);
-        std::thread t([&candidate] { candidate->run(); });
-        // The engine either binds and serves within a moment, or run()
-        // returned false and the port scan continues.
-        bool up = false;
-        for (int i = 0; i < 50 && !up; ++i) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            up = request(p, "GET", "/api/status").find("200 OK") != std::string::npos;
-        }
-        if (up) {
-            httpPort = p;
-            engine = std::move(candidate);
-            engineThread = std::move(t);
-        } else {
-            candidate->stop();
-            t.join();
-        }
-    }
+    auto live = e2e::launch(cfg, 19350, 19370);
+    const uint16_t httpPort = live.port;
     ASSERT_NE(httpPort, 0) << "no free HTTP port for the engine";
 
     // One walker ping-ponging the diagonal, scanned from the TRUE poses.
@@ -194,8 +128,7 @@ TEST(CalibApi, RecoversWrongPoseOverHttpEndToEnd) {
 
     feeding = false;
     feeder.join();
-    engine->stop();
-    engineThread.join();
+    live.shutdown();
     std::error_code ec;
     std::filesystem::remove_all(cfg.uiRoot, ec);
 }
